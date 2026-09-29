@@ -1,1 +1,1 @@
-# aethersync
+<img src="/aethersync.png" />
