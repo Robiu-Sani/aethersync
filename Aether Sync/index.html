@@ -1,0 +1,6031 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AetherSync — Real‑time sync infrastructure</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SVG Favicon -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><defs><linearGradient id='lg' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' stop-color='%236366f1'/><stop offset='100%' stop-color='%23a855f7'/></linearGradient></defs><g stroke='url(%23lg)' stroke-width='2' fill='none' stroke-linecap='round'><path d='M8 26c-4 0-6-6-2-9 1-5 8-7 12-3 4-4 12-1 12 5 4 0 6 6 2 8'/><path d='M14 28l6-8 8 6M20 20V12'/></g><g fill='url(%23lg)'><circle cx='14' cy='28' r='3'/><circle cx='20' cy='20' r='3'/><circle cx='28' cy='26' r='3'/><circle cx='20' cy='12' r='2.5'/></g></svg>" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Space Grotesk', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --fg: #0f172a;
+      --mut: #475569;
+      --glass: rgba(255,255,255,.65);
+      --line: rgba(15,23,42,.1);
+      --glow: rgba(99,102,241,.18);
+    }
+    html.dark {
+      --bg: #070b16;
+      --fg: #e6ecff;
+      --mut: #94a3c4;
+      --glass: rgba(15,22,44,.55);
+      --line: rgba(148,163,255,.16);
+      --glow: rgba(56,189,248,.16);
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      transition: background .4s, color .4s;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .mut { color: var(--mut); }
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: background .4s, border-color .4s;
+    }
+    .grad-text {
+      background: linear-gradient(90deg,#38bdf8,#a78bfa,#f0abfc,#5eead4,#38bdf8);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: flow 8s linear infinite;
+    }
+    @keyframes flow { to { background-position: 300% 0; } }
+    .grad-border { position: relative; }
+    .grad-border::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(120deg,#38bdf8,#a78bfa,#f0abfc,#5eead4,#38bdf8);
+      background-size: 300% 300%;
+      animation: flowb 6s linear infinite;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    @keyframes flowb { to { background-position: 300% 300%; } }
+    .btn {
+      background: linear-gradient(90deg,#38bdf8,#818cf8,#c084fc);
+      background-size: 200% 100%;
+      color: #06101f;
+      font-weight: 700;
+      transition: transform .2s, box-shadow .3s, background-position .5s;
+    }
+    .btn:hover {
+      background-position: 100% 0;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(129,140,248,.55);
+    }
+    .tilt {
+      transition: transform .2s ease-out, box-shadow .3s;
+      transform-style: preserve-3d;
+    }
+    .tilt:hover {
+      box-shadow: 0 20px 50px -15px var(--glow), 0 0 0 1px rgba(129,140,248,.35);
+    }
+    /* SOLID LINE ANIMATION — no dashes */
+    .pipe {
+      stroke-dasharray: none;
+      animation: solidflow 1.4s linear infinite;
+    }
+    .pipe.rev {
+      animation-direction: reverse;
+      animation-duration: 1.8s;
+    }
+    @keyframes solidflow {
+      0% { stroke-dashoffset: 0; opacity: 1; }
+      50% { opacity: .35; }
+      100% { stroke-dashoffset: -40; opacity: 1; }
+    }
+    .pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(52,211,153,.7); }
+      50% { box-shadow: 0 0 0 7px rgba(52,211,153,0); }
+    }
+    .grid-bg {
+      background-image: linear-gradient(var(--line) 1px, transparent 1px),
+                        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 56px 56px;
+      -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 10%, transparent 70%);
+      mask-image: radial-gradient(ellipse at 50% 30%, #000 10%, transparent 70%);
+    }
+    /* Watermark backgrounds */
+    .watermark {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+      opacity: .04;
+    }
+    html.dark .watermark { opacity: .06; }
+    .watermark svg {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
+    .watermark-text {
+      position: absolute;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      white-space: nowrap;
+      user-select: none;
+      letter-spacing: -0.02em;
+    }
+    .section-rel { position: relative; overflow: hidden; }
+    .section-rel > * { position: relative; z-index: 1; }
+    ::-webkit-scrollbar { width: 10px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(#38bdf8,#a78bfa); border-radius: 8px; }
+    .tab[aria-selected=true] {
+      background: linear-gradient(90deg,#38bdf8,#a78bfa);
+      color: #06101f;
+    }
+    .tk-k { color: #c084fc; }
+    .tk-s { color: #5eead4; }
+    .tk-f { color: #38bdf8; }
+    .tk-c { color: #64748b; }
+    :focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+    @media(prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+    .brand-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, #38bdf8, #a78bfa, #f0abfc);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 14px rgba(56,189,248,.3);
+    }
+    .node-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .node-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    /* =========================================================
+       UNIFIED TYPOGRAPHY SYSTEM — matches pricing & footer
+    ========================================================== */
+
+    /* Section eyebrow */
+    .section-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-radius: 9999px;
+      border: 1px solid rgba(148,163,184,.25);
+      background: rgba(255,255,255,.7);
+      padding: 0.375rem 0.875rem;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.25em;
+      color: #64748b;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      backdrop-filter: blur(20px);
+    }
+    html.dark .section-eyebrow {
+      border-color: rgba(255,255,255,.08);
+      background: rgba(255,255,255,.025);
+      color: #94a3b8;
+    }
+
+    /* Section heading */
+    .section-heading {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 900;
+      letter-spacing: -0.065em;
+      line-height: 1.05;
+      color: #020617;
+    }
+    html.dark .section-heading { color: #ffffff; }
+
+    /* Section subtext */
+    .section-subtext {
+      font-size: 13px;
+      line-height: 1.625;
+      color: #64748b;
+    }
+    html.dark .section-subtext { color: #94a3b8; }
+
+    /* Gradient accent inside headings */
+    .heading-gradient {
+      background: linear-gradient(90deg, #38bdf8, #a78bfa, #f0abfc);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    /* small mono label */
+    .mono-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body class="antialiased overflow-x-hidden">
+
+  <!-- SVG sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#38bdf8"/>
+        <stop offset=".5" stop-color="#a78bfa"/>
+        <stop offset="1" stop-color="#f0abfc"/>
+      </linearGradient>
+    </defs>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 018 0v3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3v18M5 8h14M5 8l-3 7h6zM19 8l-3 7h6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-gh" viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-3.2 19.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.4 1.1 2.9.8.1-.7.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.300.1-2.700 0 0 .8-.3 2.800 1a9.500 9.500 0 015 0c1.900-1.300 2.800-1 2.800-1 .5 1.400.2 2.400.1 2.700.6.700 1 1.600 1 2.700 0 3.900-2.400 4.700-4.600 5 .4.300.7.900.7 1.800v2.700c0 .3.2.6.7.5A10 10 0 0012 2z" fill="currentColor"/></symbol>
+    <symbol id="i-in" viewBox="0 0 24 24"><path d="M4 9h4v11H4zM6 3.500a2.200 2.200 0 110 4.400 2.200 2.200 0 010-4.400zM10 9h3.800v1.600c.6-1 1.900-1.900 3.800-1.900 3.800 0 4.400 2.500 4.400 5.700V20h-4v-5c0-1.200 0-2.700-1.700-2.700S14 13.600 14 14.900V20h-4z" fill="currentColor"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <!-- node icons -->
+    <symbol id="i-web" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2 8h20" stroke="currentColor" stroke-width="1.8"/><circle cx="5" cy="6" r="1" fill="currentColor"/><circle cx="8" cy="6" r="1" fill="currentColor"/><path d="M8 20h8M12 18v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M11 18h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-edge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="1.2" opacity=".6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-cluster" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-push" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <!-- pipeline step icons -->
+    <symbol id="i-sdk" viewBox="0 0 24 24"><path d="M8 4H5a2 2 0 00-2 2v12a2 2 0 002 2h3M16 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3M9 12h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><circle cx="7" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="7" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 9v6M10 6h4a3 3 0 013 3v0M10 18h4a3 3 0 003-3v0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-wal" viewBox="0 0 24 24"><path d="M3 12h4l2-6 3 12 2-6h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <!-- Header -->
+
+<header
+  id="siteHeader"
+  class="fixed top-0 inset-x-0 z-50 border-b border-black/5 dark:border-white/10 bg-white/75 dark:bg-[#05070c]/75 backdrop-blur-2xl transition-all duration-300"
+>
+  <!-- ambient glow -->
+  <div
+    class="pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent"
+  ></div>
+
+  <div class="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.045]"
+       style="background-image:linear-gradient(rgba(56,189,248,.7) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.7) 1px,transparent 1px);background-size:32px 32px;">
+  </div>
+
+  <div class="relative max-w-7xl mx-auto px-5 h-[68px] flex items-center justify-between">
+
+    <!-- =========================
+         BRAND
+    ========================== -->
+    <a
+      href="#top"
+      class="group flex items-center gap-3 shrink-0"
+      aria-label="AetherSync Home"
+    >
+      <!-- logo container -->
+      <span
+        class="relative grid h-10 w-10 place-items-center rounded-xl border border-sky-400/20 bg-sky-400/[0.07] shadow-[0_0_30px_rgba(56,189,248,.08)] transition-all duration-300 group-hover:border-sky-400/50 group-hover:bg-sky-400/[0.12] group-hover:shadow-[0_0_30px_rgba(56,189,248,.18)]"
+      >
+        <!-- rotating ring -->
+        <span
+          class="pointer-events-none absolute inset-0 rounded-xl border border-dashed border-sky-400/10 transition-transform duration-700 group-hover:rotate-90"
+        ></span>
+
+        <svg
+          width="30"
+          height="30"
+          viewBox="0 0 40 40"
+          aria-hidden="true"
+          class="relative"
+        >
+          <defs>
+            <linearGradient id="aetherNavLogo" x1="5" y1="35" x2="35" y2="5">
+              <stop offset="0%" stop-color="#38bdf8"/>
+              <stop offset="50%" stop-color="#60a5fa"/>
+              <stop offset="100%" stop-color="#a78bfa"/>
+            </linearGradient>
+          </defs>
+
+          <g
+            stroke="url(#aetherNavLogo)"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          >
+            <path d="M8 26c-4 0-6-6-2-9 1-5 8-7 12-3 4-4 12-1 12 5 4 0 6 6 2 8"/>
+            <path d="M14 28l6-8 8 6M20 20V12"/>
+          </g>
+
+          <g fill="url(#aetherNavLogo)">
+            <circle cx="14" cy="28" r="3"/>
+            <circle cx="20" cy="20" r="3"/>
+            <circle cx="28" cy="26" r="3"/>
+            <circle cx="20" cy="12" r="2.5"/>
+          </g>
+        </svg>
+      </span>
+
+      <!-- brand text -->
+      <span class="flex flex-col leading-none">
+        <span
+          class="text-[15px] font-bold tracking-[-0.02em] text-slate-950 dark:text-white"
+        >
+          Aether<span class="text-sky-400">Sync</span>
+        </span>
+
+        <span
+          class="mt-1 hidden sm:block text-[8px] font-semibold uppercase tracking-[0.28em] text-slate-400 dark:text-slate-500"
+        >
+          Distributed Sync
+        </span>
+      </span>
+    </a>
+
+
+    <!-- =========================
+         DESKTOP NAVIGATION
+    ========================== -->
+    <nav
+      id="desktopNav"
+      class="hidden md:flex items-center gap-1 rounded-full border border-black/5 dark:border-white/10 bg-black/[0.025] dark:bg-white/[0.025] p-1"
+      aria-label="Main navigation"
+    >
+      <a
+        href="#features"
+        class="nav-link relative rounded-full px-4 py-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 transition-all hover:text-slate-950 dark:hover:text-white"
+      >
+        Features
+      </a>
+
+      <a
+        href="#architecture"
+        class="nav-link relative rounded-full px-4 py-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 transition-all hover:text-slate-950 dark:hover:text-white"
+      >
+        Architecture
+      </a>
+
+      <a
+        href="#metrics"
+        class="nav-link relative rounded-full px-4 py-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 transition-all hover:text-slate-950 dark:hover:text-white"
+      >
+        Metrics
+      </a>
+
+      <a
+        href="#pricing"
+        class="nav-link relative rounded-full px-4 py-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 transition-all hover:text-slate-950 dark:hover:text-white"
+      >
+        Pricing
+      </a>
+
+      <a
+        href="#docs"
+        class="nav-link relative rounded-full px-4 py-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 transition-all hover:text-slate-950 dark:hover:text-white"
+      >
+        Docs
+      </a>
+    </nav>
+
+
+    <!-- =========================
+         ACTIONS
+    ========================== -->
+    <div class="flex items-center gap-2">
+
+      <!-- system status -->
+      <div
+        class="hidden lg:flex items-center gap-2 mr-2 rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-3 py-1.5"
+      >
+        <span class="relative flex h-1.5 w-1.5">
+          <span
+            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"
+          ></span>
+          <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        </span>
+
+        <span
+          class="text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald-500"
+        >
+          Systems Online
+        </span>
+      </div>
+
+
+      <!-- theme -->
+      <button
+        id="theme"
+        type="button"
+        aria-label="Toggle theme"
+        class="group relative grid h-9 w-9 place-items-center rounded-full border border-black/5 dark:border-white/10 bg-black/[0.025] dark:bg-white/[0.035] transition-all duration-300 hover:border-sky-400/30 hover:bg-sky-400/[0.07] hover:scale-105"
+      >
+        <svg
+          class="h-[17px] w-[17px] text-slate-600 dark:text-slate-300 transition-transform duration-500 group-hover:rotate-45"
+        >
+          <use id="theme-i" href="#i-sun"></use>
+        </svg>
+      </button>
+
+
+      <!-- launch console -->
+      <a
+        href="#"
+        class="group relative hidden sm:flex items-center gap-2 overflow-hidden rounded-full border border-sky-400/30 bg-sky-400/[0.08] px-4 py-2 text-[11px] font-semibold text-sky-600 dark:text-sky-300 transition-all duration-300 hover:border-sky-400/60 hover:bg-sky-400/[0.14] hover:shadow-[0_0_25px_rgba(56,189,248,.14)]"
+      >
+        <span>Launch Console</span>
+
+        <svg
+          class="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M5 12h13m-5-5 5 5-5 5"
+          />
+        </svg>
+
+        <!-- hover sweep -->
+        <span
+          class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full"
+        ></span>
+      </a>
+
+
+      <!-- mobile menu -->
+      <button
+        id="mobileMenu"
+        type="button"
+        aria-label="Open navigation"
+        aria-expanded="false"
+        class="md:hidden grid h-9 w-9 place-items-center rounded-full border border-black/5 dark:border-white/10 bg-black/[0.025] dark:bg-white/[0.035]"
+      >
+        <span class="relative block h-4 w-4">
+          <span
+            class="mobile-line absolute left-0 top-0 h-px w-4 bg-current transition-all duration-300"
+          ></span>
+
+          <span
+            class="mobile-line absolute left-0 top-[7px] h-px w-4 bg-current transition-all duration-300"
+          ></span>
+
+          <span
+            class="mobile-line absolute left-0 top-[14px] h-px w-4 bg-current transition-all duration-300"
+          ></span>
+        </span>
+      </button>
+
+    </div>
+  </div>
+
+
+  <!-- =========================
+       MOBILE NAV
+  ========================== -->
+  <div
+    id="mobileNav"
+    class="pointer-events-none absolute left-0 right-0 top-full translate-y-[-8px] border-b border-black/5 bg-white/95 opacity-0 backdrop-blur-2xl transition-all duration-300 dark:border-white/10 dark:bg-[#05070c]/95 md:hidden"
+  >
+    <div class="mx-auto max-w-7xl px-5 py-4">
+
+      <div class="grid gap-1">
+
+        <a
+          href="#features"
+          class="mobile-nav-link flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-sky-400/[0.06] hover:text-sky-500 dark:text-slate-300"
+        >
+          <span>Features</span>
+          <span class="text-slate-400">01</span>
+        </a>
+
+        <a
+          href="#architecture"
+          class="mobile-nav-link flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-sky-400/[0.06] hover:text-sky-500 dark:text-slate-300"
+        >
+          <span>Architecture</span>
+          <span class="text-slate-400">02</span>
+        </a>
+
+        <a
+          href="#metrics"
+          class="mobile-nav-link flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-sky-400/[0.06] hover:text-sky-500 dark:text-slate-300"
+        >
+          <span>Metrics</span>
+          <span class="text-slate-400">03</span>
+        </a>
+
+        <a
+          href="#pricing"
+          class="mobile-nav-link flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-sky-400/[0.06] hover:text-sky-500 dark:text-slate-300"
+        >
+          <span>Pricing</span>
+          <span class="text-slate-400">04</span>
+        </a>
+
+        <a
+          href="#docs"
+          class="mobile-nav-link flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-sky-400/[0.06] hover:text-sky-500 dark:text-slate-300"
+        >
+          <span>Documentation</span>
+          <span class="text-slate-400">05</span>
+        </a>
+
+      </div>
+
+      <!-- mobile console -->
+      <a
+        href="#"
+        class="mt-3 flex items-center justify-center gap-2 rounded-xl border border-sky-400/25 bg-sky-400/[0.07] px-4 py-3 text-xs font-semibold text-sky-500 transition hover:bg-sky-400/[0.12]"
+      >
+        Launch Console
+
+        <svg
+          class="h-3.5 w-3.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 12h14m-6-6 6 6-6 6"
+          />
+        </svg>
+      </a>
+
+    </div>
+  </div>
+</header>
+
+  <main id="top">
+    <!-- Hero -->
+  
+
+
+<section class="relative pt-32 sm:pt-36 pb-24 sm:pb-32 px-5 section-rel overflow-hidden">
+  <!-- =========================================================
+       BACKGROUND / ATMOSPHERE
+  ========================================================== -->
+
+  <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+    <!-- Grid -->
+    <div class="absolute inset-0 grid-bg opacity-70"></div>
+
+    <!-- Ambient lights -->
+    <div
+      class="absolute -top-40 left-[8%] w-[42rem] h-[42rem] rounded-full blur-3xl opacity-25"
+      style="background:radial-gradient(circle,#38bdf8,transparent 68%)"
+    ></div>
+
+    <div
+      class="absolute top-[18%] right-[-10rem] w-[38rem] h-[38rem] rounded-full blur-3xl opacity-20"
+      style="background:radial-gradient(circle,#a78bfa,transparent 68%)"
+    ></div>
+
+    <div
+      class="absolute bottom-[-14rem] left-[35%] w-[34rem] h-[34rem] rounded-full blur-3xl opacity-15"
+      style="background:radial-gradient(circle,#5eead4,transparent 68%)"
+    ></div>
+
+    <!-- Horizon -->
+    <div
+      class="absolute top-[27%] left-0 right-0 h-px opacity-20"
+      style="background:linear-gradient(90deg,transparent,#38bdf8,transparent)"
+    ></div>
+
+    <!-- Decorative data paths -->
+    <svg
+      class="absolute inset-0 w-full h-full opacity-40"
+      viewBox="0 0 1440 850"
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <linearGradient id="heroFlowA" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0"/>
+          <stop offset="45%" stop-color="#38bdf8"/>
+          <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+        </linearGradient>
+
+        <linearGradient id="heroFlowB" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#f0abfc" stop-opacity="0"/>
+          <stop offset="50%" stop-color="#f0abfc"/>
+          <stop offset="100%" stop-color="#5eead4" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+
+      <path
+        class="pipe"
+        d="M-100 620C240 350 470 760 780 510S1200 300 1540 420"
+        fill="none"
+        stroke="url(#heroFlowA)"
+        stroke-width="1"
+      />
+
+      <path
+        class="pipe rev"
+        d="M-100 720C260 520 540 810 850 610S1250 450 1540 530"
+        fill="none"
+        stroke="url(#heroFlowB)"
+        stroke-width="1"
+      />
+    </svg>
+  </div>
+
+  <!-- =========================================================
+       WATERMARK
+  ========================================================== -->
+
+  <div class="watermark pointer-events-none select-none" aria-hidden="true">
+    <div
+      class="watermark-text"
+      style="
+        font-size:clamp(11rem,24vw,22rem);
+        top:-5rem;
+        left:-3rem;
+        background:linear-gradient(135deg,#38bdf8,#a78bfa);
+        -webkit-background-clip:text;
+        background-clip:text;
+        color:transparent;
+      "
+    >
+      AE
+    </div>
+
+    <div
+      class="watermark-text"
+      style="
+        font-size:clamp(8rem,17vw,15rem);
+        bottom:-3rem;
+        right:-2rem;
+        background:linear-gradient(135deg,#f0abfc,#5eead4);
+        -webkit-background-clip:text;
+        background-clip:text;
+        color:transparent;
+      "
+    >
+      SYNC
+    </div>
+
+    <svg
+      viewBox="0 0 1440 800"
+      preserveAspectRatio="none"
+      class="opacity-70"
+    >
+      <path
+        d="M0 470C260 260 530 690 820 420S1220 160 1440 280"
+        fill="none"
+        stroke="url(#heroFlowA)"
+        stroke-width="2"
+      />
+
+      <path
+        d="M0 610C330 420 620 760 940 530S1270 330 1440 430"
+        fill="none"
+        stroke="#5eead4"
+        stroke-width="1"
+        opacity=".45"
+      />
+    </svg>
+  </div>
+
+  <!-- =========================================================
+       MAIN
+  ========================================================== -->
+
+  <div class="relative max-w-7xl mx-auto">
+
+    <div class="grid lg:grid-cols-12 gap-12 xl:gap-16 items-center">
+
+      <!-- =====================================================
+           LEFT / COPY
+      ====================================================== -->
+
+      <div class="lg:col-span-6 relative z-10">
+
+        <!-- Status -->
+        <a
+          href="#architecture"
+          class="grad-border glass inline-flex items-center gap-3 rounded-full px-4 py-2 text-xs font-mono tracking-wide hover:scale-[1.03] transition"
+        >
+          <span class="relative flex w-2 h-2">
+            <span
+              class="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-70 animate-ping"
+            ></span>
+            <span class="relative inline-flex w-2 h-2 rounded-full bg-emerald-400"></span>
+          </span>
+
+          <span class="mut">AETHERSYNC</span>
+
+          <span class="text-slate-400 dark:text-slate-500">/</span>
+
+          <span class="text-sky-400">v2.4 LIVE</span>
+        </a>
+
+        <!-- Heading -->
+        <h1
+          class="mt-7 text-[3.2rem] sm:text-6xl xl:text-[4.5rem] font-black leading-[.98] tracking-[-0.07em] text-slate-950 dark:text-white"
+        >
+          Your data moves
+          <span class="block">
+            at the
+            <span class="heading-gradient">speed of now.</span>
+          </span>
+        </h1>
+
+        <!-- Description -->
+        <p class="mt-7 text-[14px] sm:text-[15px] leading-7 section-subtext max-w-xl">
+          AetherSync keeps every client, edge node and database in sync —
+          across
+          <span class="text-slate-900 dark:text-white font-medium">
+            340+ edge locations
+          </span>
+          with sub-4 ms change propagation.
+        </p>
+
+        <!-- CTAs -->
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a
+            href="#docs"
+            class="btn rounded-full px-7 py-3.5 text-sm font-semibold shadow-[0_0_35px_rgba(56,189,248,.18)]"
+          >
+            Start building free
+            <span class="ml-1">↗</span>
+          </a>
+
+          <a
+            href="#architecture"
+            class="glass rounded-full px-7 py-3.5 text-sm font-medium hover:border-sky-400 hover:text-sky-400 transition"
+          >
+            Explore architecture
+          </a>
+        </div>
+
+        <!-- Trust -->
+        <div class="mt-9 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div class="flex items-center gap-2">
+            <div class="flex -space-x-2">
+              <span class="w-6 h-6 rounded-full border-2 border-white dark:border-slate-950 bg-sky-400"></span>
+              <span class="w-6 h-6 rounded-full border-2 border-white dark:border-slate-950 bg-violet-400"></span>
+              <span class="w-6 h-6 rounded-full border-2 border-white dark:border-slate-950 bg-cyan-300"></span>
+              <span class="w-6 h-6 rounded-full border-2 border-white dark:border-slate-950 bg-fuchsia-300"></span>
+            </div>
+
+            <span class="text-xs mut">
+              2,100+ teams
+            </span>
+          </div>
+
+          <span class="hidden sm:block h-4 w-px bg-slate-300 dark:bg-slate-700"></span>
+
+          <span class="text-xs mut">
+            No credit card required
+          </span>
+        </div>
+
+        <!-- Mini telemetry -->
+        <div class="mt-10 grid grid-cols-3 max-w-lg border-y border-slate-200/70 dark:border-white/10">
+
+          <div class="py-4 pr-4 border-r border-slate-200/70 dark:border-white/10">
+            <div class="text-[10px] font-mono uppercase tracking-[.18em] mut">
+              Propagation
+            </div>
+
+            <div class="mt-1 text-lg font-bold tracking-tight">
+              &lt;4ms
+            </div>
+          </div>
+
+          <div class="py-4 px-4 border-r border-slate-200/70 dark:border-white/10">
+            <div class="text-[10px] font-mono uppercase tracking-[.18em] mut">
+              Edge nodes
+            </div>
+
+            <div class="mt-1 text-lg font-bold tracking-tight">
+              340+
+            </div>
+          </div>
+
+          <div class="py-4 pl-4">
+            <div class="text-[10px] font-mono uppercase tracking-[.18em] mut">
+              Availability
+            </div>
+
+            <div class="mt-1 text-lg font-bold tracking-tight">
+              99.99%
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- =====================================================
+           RIGHT / LIVE TOPOLOGY
+      ====================================================== -->
+
+      <div class="lg:col-span-6 relative">
+
+        <!-- Floating label -->
+        <div
+          class="absolute -top-5 left-6 z-20 glass grad-border rounded-full px-3 py-1.5 text-[10px] font-mono tracking-wider"
+        >
+          REALTIME TOPOLOGY
+        </div>
+
+        <!-- Main console -->
+        <div
+          class="relative glass grad-border rounded-[1.75rem] p-2 shadow-[0_30px_100px_rgba(15,23,42,.18)] dark:shadow-[0_30px_100px_rgba(0,0,0,.35)]"
+        >
+
+          <!-- Inner frame -->
+          <div
+            class="relative overflow-hidden rounded-[1.35rem] border border-slate-200/70 dark:border-white/10 bg-white/40 dark:bg-slate-950/50"
+          >
+
+            <!-- Console header -->
+            <div
+              class="h-12 px-4 border-b border-slate-200/70 dark:border-white/10 flex items-center justify-between"
+            >
+
+              <div class="flex items-center gap-3">
+
+                <div class="flex gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-rose-400/80"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-300/80"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-400/80"></span>
+                </div>
+
+                <span class="text-[10px] font-mono mut">
+                  topology.aethersync
+                </span>
+
+              </div>
+
+              <div class="flex items-center gap-2 text-[10px] font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span class="text-emerald-400">HEALTHY</span>
+              </div>
+
+            </div>
+
+            <!-- Telemetry strip -->
+            <div
+              class="grid grid-cols-3 border-b border-slate-200/70 dark:border-white/10"
+            >
+
+              <div class="px-4 py-3 border-r border-slate-200/70 dark:border-white/10">
+                <div class="text-[8px] font-mono uppercase tracking-widest mut">
+                  Regions
+                </div>
+                <div class="mt-1 text-xs font-semibold">
+                  04 / 04
+                </div>
+              </div>
+
+              <div class="px-4 py-3 border-r border-slate-200/70 dark:border-white/10">
+                <div class="text-[8px] font-mono uppercase tracking-widest mut">
+                  Latency
+                </div>
+                <div class="mt-1 text-xs font-semibold text-sky-400">
+                  3.4 ms
+                </div>
+              </div>
+
+              <div class="px-4 py-3">
+                <div class="text-[8px] font-mono uppercase tracking-widest mut">
+                  Events/s
+                </div>
+                <div class="mt-1 text-xs font-semibold">
+                  18.7K
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Visualization -->
+            <div class="relative px-3 sm:px-5 py-5">
+
+              <!-- Coordinate labels -->
+              <div class="absolute top-3 left-4 text-[8px] font-mono text-slate-400/60">
+                01 / CLIENT
+              </div>
+
+              <div class="absolute top-3 right-4 text-[8px] font-mono text-slate-400/60">
+                04 / STORAGE
+              </div>
+
+              <svg
+                viewBox="0 0 560 380"
+                class="w-full h-auto"
+                role="img"
+                aria-label="AetherSync real-time data topology"
+              >
+
+                <defs>
+
+                  <linearGradient id="aetherHeroLine" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#38bdf8"/>
+                    <stop offset="50%" stop-color="#a78bfa"/>
+                    <stop offset="100%" stop-color="#5eead4"/>
+                  </linearGradient>
+
+                  <linearGradient id="aetherHeroNode" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#38bdf8"/>
+                    <stop offset="100%" stop-color="#a78bfa"/>
+                  </linearGradient>
+
+                  <filter id="aetherGlow">
+                    <feGaussianBlur stdDeviation="5" result="blur"/>
+                    <feMerge>
+                      <feMergeNode in="blur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+
+                  <filter id="aetherSoftGlow">
+                    <feGaussianBlur stdDeviation="12"/>
+                  </filter>
+
+                </defs>
+
+                <!-- Background topology grid -->
+                <g opacity=".28">
+                  <path
+                    d="M20 80H540M20 150H540M20 220H540M20 290H540"
+                    stroke="currentColor"
+                    stroke-width=".5"
+                    stroke-dasharray="2 8"
+                  />
+
+                  <path
+                    d="M100 35V340M200 35V340M300 35V340M400 35V340M500 35V340"
+                    stroke="currentColor"
+                    stroke-width=".5"
+                    stroke-dasharray="2 8"
+                  />
+                </g>
+
+                <!-- Glow behind core -->
+                <circle
+                  cx="280"
+                  cy="190"
+                  r="75"
+                  fill="#8b5cf6"
+                  opacity=".08"
+                  filter="url(#aetherSoftGlow)"
+                />
+
+                <!-- Main pipes -->
+                <g fill="none" stroke-linecap="round">
+
+                  <path
+                    d="M105 105C165 105 190 190 255 190"
+                    stroke="#38bdf8"
+                    stroke-width="2.5"
+                    opacity=".8"
+                  />
+
+                  <path
+                    d="M105 275C165 275 190 190 255 190"
+                    stroke="#f0abfc"
+                    stroke-width="2.5"
+                    opacity=".75"
+                  />
+
+                  <path
+                    d="M305 190H395"
+                    stroke="url(#aetherHeroLine)"
+                    stroke-width="2.8"
+                  />
+
+                  <path
+                    d="M445 165V95"
+                    stroke="#38bdf8"
+                    stroke-width="2"
+                  />
+
+                  <path
+                    d="M445 215V285"
+                    stroke="#5eead4"
+                    stroke-width="2"
+                  />
+
+                </g>
+
+                <!-- Pipe glow -->
+                <g
+                  fill="none"
+                  stroke-linecap="round"
+                  filter="url(#aetherGlow)"
+                  opacity=".45"
+                >
+
+                  <path
+                    d="M105 105C165 105 190 190 255 190"
+                    stroke="#38bdf8"
+                    stroke-width="3"
+                  />
+
+                  <path
+                    d="M105 275C165 275 190 190 255 190"
+                    stroke="#f0abfc"
+                    stroke-width="3"
+                  />
+
+                  <path
+                    d="M305 190H395"
+                    stroke="#a78bfa"
+                    stroke-width="3"
+                  />
+
+                </g>
+
+                <!-- CLIENT -->
+                <g>
+
+                  <rect
+                    x="20"
+                    y="78"
+                    width="100"
+                    height="54"
+                    rx="13"
+                    fill="var(--glass)"
+                    stroke="#38bdf8"
+                    stroke-opacity=".75"
+                  />
+
+                  <circle
+                    cx="42"
+                    cy="105"
+                    r="13"
+                    fill="#38bdf8"
+                    opacity=".1"
+                  />
+
+                  <foreignObject
+                    x="30"
+                    y="93"
+                    width="24"
+                    height="24"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#38bdf8;"
+                    >
+                      <svg>
+                        <use href="#i-web"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="61"
+                    y="101"
+                    font-family="JetBrains Mono"
+                    font-size="9"
+                    fill="currentColor"
+                  >
+                    CLIENT
+                  </text>
+
+                  <text
+                    x="61"
+                    y="116"
+                    font-family="JetBrains Mono"
+                    font-size="7.5"
+                    fill="#38bdf8"
+                  >
+                    3.1 ms
+                  </text>
+
+                </g>
+
+                <!-- MOBILE -->
+                <g>
+
+                  <rect
+                    x="20"
+                    y="248"
+                    width="100"
+                    height="54"
+                    rx="13"
+                    fill="var(--glass)"
+                    stroke="#f0abfc"
+                    stroke-opacity=".75"
+                  />
+
+                  <circle
+                    cx="42"
+                    cy="275"
+                    r="13"
+                    fill="#f0abfc"
+                    opacity=".1"
+                  />
+
+                  <foreignObject
+                    x="30"
+                    y="263"
+                    width="24"
+                    height="24"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#f0abfc;"
+                    >
+                      <svg>
+                        <use href="#i-mobile"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="61"
+                    y="271"
+                    font-family="JetBrains Mono"
+                    font-size="9"
+                    fill="currentColor"
+                  >
+                    MOBILE
+                  </text>
+
+                  <text
+                    x="61"
+                    y="286"
+                    font-family="JetBrains Mono"
+                    font-size="7.5"
+                    fill="#f0abfc"
+                  >
+                    3.8 ms
+                  </text>
+
+                </g>
+
+                <!-- EDGE CORE -->
+                <g>
+
+                  <circle
+                    cx="280"
+                    cy="190"
+                    r="39"
+                    fill="var(--glass)"
+                    stroke="url(#aetherHeroNode)"
+                    stroke-width="2"
+                  />
+
+                  <circle
+                    cx="280"
+                    cy="190"
+                    r="30"
+                    fill="none"
+                    stroke="#a78bfa"
+                    stroke-opacity=".2"
+                    stroke-dasharray="2 5"
+                  />
+
+                  <foreignObject
+                    x="260"
+                    y="170"
+                    width="40"
+                    height="40"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#a78bfa;"
+                    >
+                      <svg>
+                        <use href="#i-edge"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="280"
+                    y="246"
+                    font-family="JetBrains Mono"
+                    font-size="8"
+                    fill="currentColor"
+                    text-anchor="middle"
+                  >
+                    EDGE GATEWAY
+                  </text>
+
+                  <text
+                    x="280"
+                    y="259"
+                    font-family="JetBrains Mono"
+                    font-size="7"
+                    fill="#a78bfa"
+                    text-anchor="middle"
+                  >
+                    ROUTING / SYNC
+                  </text>
+
+                </g>
+
+                <!-- CLUSTER -->
+                <g>
+
+                  <rect
+                    x="395"
+                    y="145"
+                    width="100"
+                    height="58"
+                    rx="13"
+                    fill="var(--glass)"
+                    stroke="#a78bfa"
+                    stroke-opacity=".8"
+                  />
+
+                  <foreignObject
+                    x="407"
+                    y="157"
+                    width="30"
+                    height="30"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#a78bfa;"
+                    >
+                      <svg>
+                        <use href="#i-cluster"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="452"
+                    y="170"
+                    font-family="JetBrains Mono"
+                    font-size="8.5"
+                    fill="currentColor"
+                    text-anchor="middle"
+                  >
+                    CLUSTER
+                  </text>
+
+                  <text
+                    x="452"
+                    y="186"
+                    font-family="JetBrains Mono"
+                    font-size="7"
+                    fill="#a78bfa"
+                    text-anchor="middle"
+                  >
+                    48 SHARDS
+                  </text>
+
+                </g>
+
+                <!-- PUSH -->
+                <g>
+
+                  <rect
+                    x="395"
+                    y="35"
+                    width="100"
+                    height="44"
+                    rx="12"
+                    fill="var(--glass)"
+                    stroke="#38bdf8"
+                    stroke-opacity=".7"
+                  />
+
+                  <foreignObject
+                    x="407"
+                    y="43"
+                    width="25"
+                    height="25"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#38bdf8;"
+                    >
+                      <svg>
+                        <use href="#i-push"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="452"
+                    y="53"
+                    font-family="JetBrains Mono"
+                    font-size="8"
+                    fill="currentColor"
+                    text-anchor="middle"
+                  >
+                    PUSH
+                  </text>
+
+                  <text
+                    x="452"
+                    y="66"
+                    font-family="JetBrains Mono"
+                    font-size="7"
+                    fill="#38bdf8"
+                    text-anchor="middle"
+                  >
+                    12 SUBS
+                  </text>
+
+                </g>
+
+                <!-- DATABASE -->
+                <g>
+
+                  <rect
+                    x="395"
+                    y="285"
+                    width="100"
+                    height="44"
+                    rx="12"
+                    fill="var(--glass)"
+                    stroke="#5eead4"
+                    stroke-opacity=".8"
+                  />
+
+                  <foreignObject
+                    x="407"
+                    y="293"
+                    width="25"
+                    height="25"
+                  >
+                    <div
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      class="node-icon"
+                      style="color:#5eead4;"
+                    >
+                      <svg>
+                        <use href="#i-db"></use>
+                      </svg>
+                    </div>
+                  </foreignObject>
+
+                  <text
+                    x="452"
+                    y="303"
+                    font-family="JetBrains Mono"
+                    font-size="8"
+                    fill="currentColor"
+                    text-anchor="middle"
+                  >
+                    DATABASE
+                  </text>
+
+                  <text
+                    x="452"
+                    y="316"
+                    font-family="JetBrains Mono"
+                    font-size="7"
+                    fill="#5eead4"
+                    text-anchor="middle"
+                  >
+                    REPLICATED
+                  </text>
+
+                </g>
+
+                <!-- Animated packets -->
+                <circle r="4" fill="#38bdf8" filter="url(#aetherGlow)">
+                  <animateMotion
+                    dur="2.3s"
+                    repeatCount="indefinite"
+                    path="M105 105C165 105 190 190 255 190"
+                  />
+                </circle>
+
+                <circle r="4" fill="#f0abfc" filter="url(#aetherGlow)">
+                  <animateMotion
+                    dur="2.7s"
+                    repeatCount="indefinite"
+                    path="M105 275C165 275 190 190 255 190"
+                  />
+                </circle>
+
+                <circle r="4" fill="#a78bfa" filter="url(#aetherGlow)">
+                  <animateMotion
+                    dur="1.5s"
+                    repeatCount="indefinite"
+                    path="M305 190H395"
+                  />
+                </circle>
+
+                <circle r="3" fill="#5eead4" filter="url(#aetherGlow)">
+                  <animateMotion
+                    dur="2s"
+                    repeatCount="indefinite"
+                    path="M445 215V285"
+                  />
+                </circle>
+
+                <!-- Core pulse -->
+                <circle
+                  cx="280"
+                  cy="190"
+                  r="47"
+                  fill="none"
+                  stroke="#a78bfa"
+                  stroke-width="1"
+                  opacity=".25"
+                >
+                  <animate
+                    attributeName="r"
+                    values="42;56;42"
+                    dur="2.8s"
+                    repeatCount="indefinite"
+                  />
+
+                  <animate
+                    attributeName="opacity"
+                    values=".3;0;.3"
+                    dur="2.8s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+
+              </svg>
+
+              <!-- Floating protocol cards -->
+
+              <div
+                class="absolute left-3 sm:left-6 top-[30%] glass rounded-xl px-3 py-2 border border-sky-400/20"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                  <span class="text-[9px] font-mono text-sky-400">
+                    WEBSOCKET
+                  </span>
+                </div>
+              </div>
+
+              <div
+                class="absolute right-3 sm:right-6 top-[48%] glass rounded-xl px-3 py-2 border border-violet-400/20"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
+                  <span class="text-[9px] font-mono text-violet-400">
+                    CRDT
+                  </span>
+                </div>
+              </div>
+
+              <div
+                class="absolute left-[28%] bottom-4 glass rounded-xl px-3 py-2 border border-emerald-400/20"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span class="text-[9px] font-mono text-emerald-400">
+                    EVENTUAL CONSISTENCY
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Console footer -->
+            <div
+              class="px-4 py-3 border-t border-slate-200/70 dark:border-white/10 flex items-center justify-between"
+            >
+
+              <div class="flex items-center gap-3 text-[9px] font-mono mut">
+                <span>SYNC CHANNEL</span>
+                <span class="text-slate-400 dark:text-slate-600">•</span>
+                <span>ENCRYPTED</span>
+              </div>
+
+              <div class="text-[9px] font-mono text-emerald-400">
+                18,742 EVENTS / SEC
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Bottom floating stats -->
+        <div class="relative mt-4 grid grid-cols-3 gap-3">
+
+          <div class="glass rounded-2xl px-4 py-3 border border-sky-400/10">
+            <div class="text-[9px] font-mono uppercase tracking-widest mut">
+              Inbound
+            </div>
+            <div class="mt-1 flex items-end gap-1">
+              <span class="text-lg font-bold">8.4K</span>
+              <span class="mb-1 text-[8px] text-emerald-400">/s</span>
+            </div>
+          </div>
+
+          <div class="glass rounded-2xl px-4 py-3 border border-violet-400/10">
+            <div class="text-[9px] font-mono uppercase tracking-widest mut">
+              Replicas
+            </div>
+            <div class="mt-1 flex items-end gap-1">
+              <span class="text-lg font-bold">48</span>
+              <span class="mb-1 text-[8px] text-violet-400">shards</span>
+            </div>
+          </div>
+
+          <div class="glass rounded-2xl px-4 py-3 border border-emerald-400/10">
+            <div class="text-[9px] font-mono uppercase tracking-widest mut">
+              Errors
+            </div>
+            <div class="mt-1 flex items-end gap-1">
+              <span class="text-lg font-bold">0.00</span>
+              <span class="mb-1 text-[8px] text-emerald-400">%</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- =======================================================
+         BOTTOM CAPABILITY BAR
+    ======================================================== -->
+
+    <div
+      class="mt-20 pt-6 border-t border-slate-200/70 dark:border-white/10"
+    >
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+
+        <div class="text-[10px] font-mono uppercase tracking-[.22em] mut">
+          Infrastructure built for real-time applications
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+
+          <span class="glass rounded-full px-3 py-1.5 text-[10px] font-mono">
+            WebSocket
+          </span>
+
+          <span class="glass rounded-full px-3 py-1.5 text-[10px] font-mono">
+            gRPC
+          </span>
+
+          <span class="glass rounded-full px-3 py-1.5 text-[10px] font-mono">
+            HTTP/3
+          </span>
+
+          <span class="glass rounded-full px-3 py-1.5 text-[10px] font-mono">
+            CRDT
+          </span>
+
+          <span class="glass rounded-full px-3 py-1.5 text-[10px] font-mono">
+            Edge Compute
+          </span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+
+
+
+    <!-- Architecture -->
+   <!-- =========================
+     ARCHITECTURE
+========================= -->
+<section
+  id="architecture"
+  class="relative overflow-hidden px-5 py-28 section-rel"
+>
+  <!-- Background grid -->
+  <div
+    class="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.045]"
+    style="
+      background-image:
+        linear-gradient(rgba(56,189,248,.8) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,.8) 1px, transparent 1px);
+      background-size: 44px 44px;
+    "
+  ></div>
+
+  <!-- Ambient glows -->
+  <div
+    class="pointer-events-none absolute -left-40 top-1/3 h-[500px] w-[500px] rounded-full bg-sky-500/[0.07] blur-[150px]"
+  ></div>
+
+  <div
+    class="pointer-events-none absolute -right-40 bottom-1/4 h-[500px] w-[500px] rounded-full bg-violet-500/[0.07] blur-[150px]"
+  ></div>
+
+  <!-- Top horizon -->
+  <div
+    class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/40 to-transparent"
+  ></div>
+
+
+  <!-- =========================
+       WATERMARK
+  ========================== -->
+  <div
+    class="pointer-events-none absolute inset-0 overflow-hidden select-none"
+    aria-hidden="true"
+  >
+    <div
+      class="absolute -right-8 top-[-30px] whitespace-nowrap text-[10rem] font-black tracking-[-0.1em] text-transparent opacity-[0.035] dark:opacity-[0.055] sm:text-[14rem] lg:text-[18rem]"
+      style="
+        background:linear-gradient(135deg,#38bdf8,#818cf8,#a78bfa);
+        -webkit-background-clip:text;
+        background-clip:text;
+      "
+    >
+      FLOW
+    </div>
+
+    <svg
+      class="absolute inset-0 h-full w-full opacity-[0.08]"
+      viewBox="0 0 1200 800"
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <linearGradient
+          id="architectureFlow"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
+        >
+          <stop stop-color="#38bdf8" stop-opacity="0"/>
+          <stop offset=".45" stop-color="#38bdf8"/>
+          <stop offset=".7" stop-color="#a78bfa"/>
+          <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+
+      <path
+        d="M-100 500 C180 220 370 700 650 400 S1020 200 1320 430"
+        fill="none"
+        stroke="url(#architectureFlow)"
+        stroke-width="2"
+      />
+
+      <path
+        d="M-100 530 C180 250 370 730 650 430 S1020 230 1320 460"
+        fill="none"
+        stroke="url(#architectureFlow)"
+        stroke-width="1"
+      />
+    </svg>
+  </div>
+
+
+  <div class="relative max-w-7xl mx-auto">
+
+    <!-- =========================
+         HEADER
+    ========================== -->
+    <div class="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+
+      <div class="max-w-3xl">
+
+        <div
+          class="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-400/15 bg-sky-400/[0.045] px-3 py-1.5"
+        >
+          <span class="relative flex h-1.5 w-1.5">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60"
+            ></span>
+            <span
+              class="relative h-1.5 w-1.5 rounded-full bg-sky-400"
+            ></span>
+          </span>
+
+          <span
+            class="text-[9px] font-semibold uppercase tracking-[0.22em] text-sky-500 dark:text-sky-300"
+          >
+            Architecture
+          </span>
+
+          <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+          <span
+            class="font-mono text-[9px] text-slate-400"
+          >
+            DATA FLOW / 04 LAYERS
+          </span>
+        </div>
+
+
+        <h2
+          class="text-4xl font-black tracking-[-0.065em] text-slate-950 dark:text-white sm:text-5xl lg:text-6xl"
+        >
+          One pipeline.
+          <br />
+          <span class="heading-gradient">
+            Any transport.
+          </span>
+        </h2>
+
+        <p
+          class="mt-5 max-w-2xl text-sm leading-7 text-slate-500 dark:text-slate-400 sm:text-base"
+        >
+          Choose how clients connect without changing your synchronization
+          model. Every transport passes through the same ordering,
+          conflict-resolution, and persistence layers.
+        </p>
+
+      </div>
+
+
+      <!-- Architecture metadata -->
+      <div
+        class="hidden lg:block"
+      >
+        <div
+          class="rounded-2xl border border-black/5 bg-white/50 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025]"
+        >
+          <div class="flex items-center gap-3">
+
+            <div
+              class="grid h-9 w-9 place-items-center rounded-xl border border-emerald-400/15 bg-emerald-400/[0.05]"
+            >
+              <span
+                class="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.7)]"
+              ></span>
+            </div>
+
+            <div>
+              <p
+                class="font-mono text-[8px] uppercase tracking-[0.18em] text-slate-400"
+              >
+                Pipeline state
+              </p>
+
+              <p
+                class="mt-1 text-xs font-bold text-emerald-500"
+              >
+                Operational
+              </p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         ARCHITECTURE CONSOLE
+    ========================== -->
+    <div
+      class="relative mt-12 overflow-hidden rounded-[30px] border border-black/5 bg-white/60 shadow-[0_30px_100px_rgba(15,23,42,.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.025] dark:shadow-[0_30px_100px_rgba(0,0,0,.18)]"
+    >
+
+      <!-- top console bar -->
+      <div
+        class="flex flex-wrap items-center justify-between gap-4 border-b border-black/5 px-5 py-4 dark:border-white/10 sm:px-6"
+      >
+
+        <div class="flex items-center gap-3">
+
+          <div class="flex gap-1.5">
+            <span class="h-2 w-2 rounded-full bg-red-400/70"></span>
+            <span class="h-2 w-2 rounded-full bg-yellow-400/70"></span>
+            <span class="h-2 w-2 rounded-full bg-emerald-400/70"></span>
+          </div>
+
+          <span
+            class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400"
+          >
+            topology.aether
+          </span>
+
+        </div>
+
+
+        <div class="flex items-center gap-3">
+
+          <span
+            class="font-mono text-[8px] text-slate-400"
+          >
+            PROTOCOL
+          </span>
+
+          <span
+            id="mode-tag"
+            class="font-mono text-[9px] font-semibold text-sky-400"
+          >
+            WEBSOCKET
+          </span>
+
+          <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+          <span
+            class="flex items-center gap-1.5 text-[8px] uppercase tracking-wider text-emerald-500"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            healthy
+          </span>
+
+        </div>
+
+      </div>
+
+
+      <div class="grid lg:grid-cols-12">
+
+
+        <!-- =========================
+             TRANSPORT SELECTOR
+        ========================== -->
+        <div
+          class="border-b border-black/5 p-5 dark:border-white/10 lg:col-span-4 lg:border-b-0 lg:border-r sm:p-7"
+        >
+
+          <div
+            class="mb-5 flex items-center justify-between"
+          >
+            <div>
+              <p
+                class="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400"
+              >
+                Transport
+              </p>
+
+              <p
+                class="mt-1 text-sm font-bold text-slate-800 dark:text-white"
+              >
+                Connection mode
+              </p>
+            </div>
+
+            <span
+              class="font-mono text-[9px] text-slate-400"
+            >
+              03 OPTIONS
+            </span>
+          </div>
+
+
+          <!-- tabs -->
+          <div
+            role="tablist"
+            class="grid gap-2"
+          >
+
+            <button
+              role="tab"
+              type="button"
+              class="tab group relative overflow-hidden rounded-2xl border border-sky-400/30 bg-sky-400/[0.08] px-4 py-4 text-left transition-all"
+              data-m="ws"
+              aria-selected="true"
+            >
+
+              <span
+                class="absolute left-0 top-0 h-full w-0.5 bg-sky-400"
+              ></span>
+
+              <div class="flex items-center justify-between">
+
+                <div class="flex items-center gap-3">
+
+                  <span
+                    class="grid h-9 w-9 place-items-center rounded-xl bg-sky-400/[0.1] text-sky-400"
+                  >
+                    <svg class="h-4 w-4">
+                      <use href="#i-sdk"></use>
+                    </svg>
+                  </span>
+
+                  <div>
+                    <p
+                      class="text-sm font-bold text-slate-900 dark:text-white"
+                    >
+                      WebSocket
+                    </p>
+
+                    <p
+                      class="mt-0.5 font-mono text-[8px] text-slate-400"
+                    >
+                      REAL-TIME / BIDIRECTIONAL
+                    </p>
+                  </div>
+
+                </div>
+
+                <span
+                  class="font-mono text-[9px] text-sky-400"
+                >
+                  WS
+                </span>
+
+              </div>
+
+            </button>
+
+
+            <button
+              role="tab"
+              type="button"
+              class="tab group relative overflow-hidden rounded-2xl border border-black/5 bg-black/[0.02] px-4 py-4 text-left transition-all hover:border-violet-400/20 hover:bg-violet-400/[0.04] dark:border-white/10 dark:bg-white/[0.02]"
+              data-m="grpc"
+              aria-selected="false"
+            >
+
+              <div class="flex items-center justify-between">
+
+                <div class="flex items-center gap-3">
+
+                  <span
+                    class="grid h-9 w-9 place-items-center rounded-xl bg-violet-400/[0.08] text-violet-400"
+                  >
+                    <svg class="h-4 w-4">
+                      <use href="#i-merge"></use>
+                    </svg>
+                  </span>
+
+                  <div>
+                    <p
+                      class="text-sm font-bold text-slate-800 dark:text-slate-200"
+                    >
+                      gRPC
+                    </p>
+
+                    <p
+                      class="mt-0.5 font-mono text-[8px] text-slate-400"
+                    >
+                      HIGH THROUGHPUT / RPC
+                    </p>
+                  </div>
+
+                </div>
+
+                <span
+                  class="font-mono text-[9px] text-violet-400"
+                >
+                  RPC
+                </span>
+
+              </div>
+
+            </button>
+
+
+            <button
+              role="tab"
+              type="button"
+              class="tab group relative overflow-hidden rounded-2xl border border-black/5 bg-black/[0.02] px-4 py-4 text-left transition-all hover:border-teal-400/20 hover:bg-teal-400/[0.04] dark:border-white/10 dark:bg-white/[0.02]"
+              data-m="h3"
+              aria-selected="false"
+            >
+
+              <div class="flex items-center justify-between">
+
+                <div class="flex items-center gap-3">
+
+                  <span
+                    class="grid h-9 w-9 place-items-center rounded-xl bg-teal-400/[0.08] text-teal-400"
+                  >
+                    <svg class="h-4 w-4">
+                      <use href="#i-globe"></use>
+                    </svg>
+                  </span>
+
+                  <div>
+                    <p
+                      class="text-sm font-bold text-slate-800 dark:text-slate-200"
+                    >
+                      HTTP/3 Stream
+                    </p>
+
+                    <p
+                      class="mt-0.5 font-mono text-[8px] text-slate-400"
+                    >
+                      QUIC / EDGE OPTIMIZED
+                    </p>
+                  </div>
+
+                </div>
+
+                <span
+                  class="font-mono text-[9px] text-teal-400"
+                >
+                  H3
+                </span>
+
+              </div>
+
+            </button>
+
+          </div>
+
+
+          <!-- mode description -->
+          <div
+            id="mode-desc"
+            class="mt-6 rounded-2xl border border-black/5 bg-black/[0.018] p-4 text-[12px] leading-6 text-slate-500 dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-400"
+          ></div>
+
+
+          <!-- metrics -->
+          <div class="mt-3 grid grid-cols-2 gap-3">
+
+            <div
+              class="rounded-2xl border border-black/5 bg-white/50 p-4 dark:border-white/5 dark:bg-white/[0.02]"
+            >
+              <p class="mono-label mut">
+                p50 latency
+              </p>
+
+              <p
+                id="m-lat"
+                class="mt-2 text-2xl font-black tracking-[-0.05em]"
+              ></p>
+            </div>
+
+
+            <div
+              class="rounded-2xl border border-black/5 bg-white/50 p-4 dark:border-white/5 dark:bg-white/[0.02]"
+            >
+              <p class="mono-label mut">
+                Max fan-out
+              </p>
+
+              <p
+                id="m-fan"
+                class="mt-2 text-2xl font-black tracking-[-0.05em]"
+              ></p>
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- =========================
+             PIPELINE
+        ========================== -->
+        <div
+          class="relative overflow-hidden p-5 sm:p-7 lg:col-span-8"
+        >
+
+          <!-- inner grid -->
+          <div
+            class="pointer-events-none absolute inset-5 rounded-2xl opacity-50"
+            style="
+              background-image:
+                linear-gradient(rgba(56,189,248,.045) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56,189,248,.045) 1px, transparent 1px);
+              background-size:28px 28px;
+            "
+          ></div>
+
+
+          <div class="relative">
+
+            <div
+              class="mb-6 flex items-center justify-between"
+            >
+
+              <div>
+                <p
+                  class="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400"
+                >
+                  Request topology
+                </p>
+
+                <p
+                  class="mt-1 text-sm font-bold text-slate-800 dark:text-white"
+                >
+                  Synchronization pipeline
+                </p>
+              </div>
+
+              <span
+                class="font-mono text-[8px] text-slate-400"
+              >
+                CLIENT → EDGE → CORE → DATA
+              </span>
+
+            </div>
+
+
+            <!-- Pipeline -->
+            <div
+              class="relative overflow-hidden rounded-[24px] border border-black/5 bg-black/[0.018] p-5 dark:border-white/5 dark:bg-black/20 sm:p-7"
+            >
+
+              <svg
+                viewBox="0 0 760 300"
+                class="h-auto min-w-[620px] w-full"
+                aria-label="AetherSync request pipeline"
+              >
+
+                <defs>
+
+                  <linearGradient
+                    id="pipelineBlue"
+                    x1="0"
+                    y1="0"
+                    x2="1"
+                    y2="0"
+                  >
+                    <stop stop-color="#38bdf8"/>
+                    <stop offset="1" stop-color="#818cf8"/>
+                  </linearGradient>
+
+                  <linearGradient
+                    id="pipelinePurple"
+                    x1="0"
+                    y1="0"
+                    x2="1"
+                    y2="0"
+                  >
+                    <stop stop-color="#818cf8"/>
+                    <stop offset="1" stop-color="#a78bfa"/>
+                  </linearGradient>
+
+                  <linearGradient
+                    id="pipelineTeal"
+                    x1="0"
+                    y1="0"
+                    x2="1"
+                    y2="0"
+                  >
+                    <stop stop-color="#a78bfa"/>
+                    <stop offset="1" stop-color="#5eead4"/>
+                  </linearGradient>
+
+                  <filter id="pipelineGlow">
+                    <feGaussianBlur
+                      stdDeviation="4"
+                      result="blur"
+                    />
+                    <feMerge>
+                      <feMergeNode in="blur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+
+                </defs>
+
+
+                <!-- connection tracks -->
+                <path
+                  d="M145 150 H225"
+                  stroke="url(#pipelineBlue)"
+                  stroke-width="2"
+                  opacity=".65"
+                />
+
+                <path
+                  d="M335 150 H415"
+                  stroke="url(#pipelinePurple)"
+                  stroke-width="2"
+                  opacity=".65"
+                />
+
+                <path
+                  d="M525 150 H605"
+                  stroke="url(#pipelineTeal)"
+                  stroke-width="2"
+                  opacity=".65"
+                />
+
+
+                <!-- return path -->
+                <path
+                  d="M605 180 H525 M415 180 H335 M225 180 H145"
+                  stroke="#f0abfc"
+                  stroke-width="1.5"
+                  stroke-dasharray="5 6"
+                  opacity=".35"
+                />
+
+
+                <!-- CLIENT -->
+                <g>
+
+                  <rect
+                    x="20"
+                    y="105"
+                    width="125"
+                    height="100"
+                    rx="18"
+                    fill="rgba(56,189,248,.035)"
+                    stroke="#38bdf8"
+                    stroke-opacity=".35"
+                  />
+
+                  <circle
+                    cx="48"
+                    cy="133"
+                    r="15"
+                    fill="#38bdf8"
+                    fill-opacity=".08"
+                  />
+
+                  <text
+                    x="48"
+                    y="138"
+                    text-anchor="middle"
+                    font-size="13"
+                    fill="#38bdf8"
+                  >
+                    SDK
+                  </text>
+
+                  <text
+                    x="82"
+                    y="136"
+                    font-size="11"
+                    font-weight="700"
+                    fill="currentColor"
+                  >
+                    Client
+                  </text>
+
+                  <text
+                    x="82"
+                    y="153"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    JWT · RETRY
+                  </text>
+
+                  <text
+                    x="82"
+                    y="185"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    REQUEST
+                  </text>
+
+                </g>
+
+
+                <!-- EDGE -->
+                <g>
+
+                  <rect
+                    x="225"
+                    y="105"
+                    width="110"
+                    height="100"
+                    rx="18"
+                    fill="rgba(129,140,248,.035)"
+                    stroke="#818cf8"
+                    stroke-opacity=".35"
+                  />
+
+                  <circle
+                    cx="253"
+                    cy="133"
+                    r="15"
+                    fill="#818cf8"
+                    fill-opacity=".08"
+                  />
+
+                  <text
+                    x="253"
+                    y="138"
+                    text-anchor="middle"
+                    font-size="11"
+                    fill="#a78bfa"
+                  >
+                    TLS
+                  </text>
+
+                  <text
+                    x="290"
+                    y="136"
+                    font-size="11"
+                    font-weight="700"
+                    fill="currentColor"
+                  >
+                    Edge
+                  </text>
+
+                  <text
+                    x="280"
+                    y="153"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    AUTH · ROUTE
+                  </text>
+
+                  <text
+                    x="280"
+                    y="185"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    VERIFY
+                  </text>
+
+                </g>
+
+
+                <!-- CLUSTER -->
+                <g>
+
+                  <rect
+                    x="415"
+                    y="105"
+                    width="110"
+                    height="100"
+                    rx="18"
+                    fill="rgba(167,139,250,.035)"
+                    stroke="#a78bfa"
+                    stroke-opacity=".35"
+                  />
+
+                  <circle
+                    cx="443"
+                    cy="133"
+                    r="15"
+                    fill="#a78bfa"
+                    fill-opacity=".08"
+                  />
+
+                  <text
+                    x="443"
+                    y="138"
+                    text-anchor="middle"
+                    font-size="11"
+                    fill="#a78bfa"
+                  >
+                    CRDT
+                  </text>
+
+                  <text
+                    x="482"
+                    y="136"
+                    font-size="11"
+                    font-weight="700"
+                    fill="currentColor"
+                  >
+                    Core
+                  </text>
+
+                  <text
+                    x="470"
+                    y="153"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    MERGE · ORDER
+                  </text>
+
+                  <text
+                    x="470"
+                    y="185"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    RESOLVE
+                  </text>
+
+                </g>
+
+
+                <!-- DATABASE -->
+                <g>
+
+                  <rect
+                    x="605"
+                    y="105"
+                    width="125"
+                    height="100"
+                    rx="18"
+                    fill="rgba(94,234,212,.035)"
+                    stroke="#5eead4"
+                    stroke-opacity=".35"
+                  />
+
+                  <circle
+                    cx="633"
+                    cy="133"
+                    r="15"
+                    fill="#5eead4"
+                    fill-opacity=".08"
+                  />
+
+                  <text
+                    x="633"
+                    y="138"
+                    text-anchor="middle"
+                    font-size="10"
+                    fill="#5eead4"
+                  >
+                    WAL
+                  </text>
+
+                  <text
+                    x="675"
+                    y="136"
+                    font-size="11"
+                    font-weight="700"
+                    fill="currentColor"
+                  >
+                    Storage
+                  </text>
+
+                  <text
+                    x="667"
+                    y="153"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    REPLICA · LOG
+                  </text>
+
+                  <text
+                    x="667"
+                    y="185"
+                    text-anchor="middle"
+                    font-size="8"
+                    fill="var(--mut)"
+                  >
+                    PERSIST
+                  </text>
+
+                </g>
+
+
+                <!-- labels -->
+                <text
+                  x="185"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="JetBrains Mono, monospace"
+                  font-size="8"
+                  fill="#38bdf8"
+                >
+                  CONNECT
+                </text>
+
+                <text
+                  x="375"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="JetBrains Mono, monospace"
+                  font-size="8"
+                  fill="#a78bfa"
+                >
+                  ROUTE
+                </text>
+
+                <text
+                  x="565"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="JetBrains Mono, monospace"
+                  font-size="8"
+                  fill="#5eead4"
+                >
+                  COMMIT
+                </text>
+
+
+                <!-- animated packets -->
+                <circle
+                  r="4"
+                  fill="#38bdf8"
+                  filter="url(#pipelineGlow)"
+                >
+                  <animateMotion
+                    dur="3s"
+                    repeatCount="indefinite"
+                    path="M145 150 H225 M225 150 H335 M335 150 H415 M415 150 H525 M525 150 H605"
+                  />
+                </circle>
+
+                <circle
+                  r="3"
+                  fill="#a78bfa"
+                  opacity=".7"
+                >
+                  <animateMotion
+                    dur="3s"
+                    begin="1.5s"
+                    repeatCount="indefinite"
+                    path="M145 150 H225 M225 150 H335 M335 150 H415 M415 150 H525 M525 150 H605"
+                  />
+                </circle>
+
+              </svg>
+
+            </div>
+
+
+            <!-- pipeline properties -->
+            <div class="mt-4 grid gap-3 sm:grid-cols-3">
+
+              <div
+                class="group rounded-2xl border border-black/5 bg-white/50 p-4 transition hover:border-sky-400/20 dark:border-white/5 dark:bg-white/[0.02]"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[9px] text-slate-400">
+                    01
+                  </span>
+
+                  <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+                </div>
+
+                <p class="mt-3 text-xs font-bold">
+                  Ordered delivery
+                </p>
+
+                <p class="mt-1 text-[10px] leading-5 text-slate-400">
+                  Per-key causal ordering with vector clocks.
+                </p>
+              </div>
+
+
+              <div
+                class="group rounded-2xl border border-black/5 bg-white/50 p-4 transition hover:border-violet-400/20 dark:border-white/5 dark:bg-white/[0.02]"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[9px] text-slate-400">
+                    02
+                  </span>
+
+                  <span class="h-1.5 w-1.5 rounded-full bg-violet-400"></span>
+                </div>
+
+                <p class="mt-3 text-xs font-bold">
+                  Offline queue
+                </p>
+
+                <p class="mt-1 text-[10px] leading-5 text-slate-400">
+                  Buffer and replay updates after reconnect.
+                </p>
+              </div>
+
+
+              <div
+                class="group rounded-2xl border border-black/5 bg-white/50 p-4 transition hover:border-teal-400/20 dark:border-white/5 dark:bg-white/[0.02]"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[9px] text-slate-400">
+                    03
+                  </span>
+
+                  <span class="h-1.5 w-1.5 rounded-full bg-teal-400"></span>
+                </div>
+
+                <p class="mt-3 text-xs font-bold">
+                  Backpressure
+                </p>
+
+                <p class="mt-1 text-[10px] leading-5 text-slate-400">
+                  Batch deltas for slow consumers instead of dropping events.
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- =========================
+         BOTTOM ARCHITECTURE STRIP
+    ========================== -->
+    <div
+      class="mt-5 grid grid-cols-2 overflow-hidden rounded-[22px] border border-black/5 bg-white/45 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-4"
+    >
+
+      <div
+        class="border-b border-r border-black/5 p-4 dark:border-white/5 sm:border-b-0"
+      >
+        <p class="font-mono text-[8px] uppercase tracking-[0.18em] text-slate-400">
+          Ordering
+        </p>
+
+        <p class="mt-1 text-sm font-bold">
+          Causal
+        </p>
+      </div>
+
+
+      <div
+        class="border-b border-black/5 p-4 dark:border-white/5 sm:border-b-0 sm:border-r"
+      >
+        <p class="font-mono text-[8px] uppercase tracking-[0.18em] text-slate-400">
+          Consistency
+        </p>
+
+        <p class="mt-1 text-sm font-bold">
+          Eventual
+        </p>
+      </div>
+
+
+      <div
+        class="border-r border-black/5 p-4 dark:border-white/5"
+      >
+        <p class="font-mono text-[8px] uppercase tracking-[0.18em] text-slate-400">
+          Transport
+        </p>
+
+        <p class="mt-1 text-sm font-bold">
+          Multi-mode
+        </p>
+      </div>
+
+
+      <div class="p-4">
+        <p class="font-mono text-[8px] uppercase tracking-[0.18em] text-slate-400">
+          Persistence
+        </p>
+
+        <p class="mt-1 text-sm font-bold">
+          Replicated
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+    <!-- Deep dive with watermark -->
+  
+
+
+
+<!-- =========================
+     CORE INFRASTRUCTURE
+========================= -->
+<section
+  class="relative overflow-hidden px-5 py-24 section-rel"
+>
+  <!-- background grid -->
+  <div
+    class="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.04]"
+    style="
+      background-image:
+        linear-gradient(rgba(56,189,248,.8) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,.8) 1px, transparent 1px);
+      background-size: 42px 42px;
+    "
+  ></div>
+
+  <!-- ambient glow -->
+  <div
+    class="pointer-events-none absolute left-1/4 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-full bg-sky-500/[0.06] blur-[130px]"
+  ></div>
+
+  <div
+    class="pointer-events-none absolute right-1/4 top-1/2 h-[350px] w-[350px] -translate-y-1/2 rounded-full bg-violet-500/[0.06] blur-[130px]"
+  ></div>
+
+
+  <!-- giant watermark -->
+  <div
+    class="pointer-events-none absolute inset-0 overflow-hidden select-none"
+    aria-hidden="true"
+  >
+    <div
+      class="absolute -bottom-12 -left-5 whitespace-nowrap text-[9rem] font-black tracking-[-0.09em] text-transparent opacity-[0.035] dark:opacity-[0.055] sm:text-[13rem] lg:text-[17rem]"
+      style="
+        background:linear-gradient(135deg,#a78bfa,#5eead4);
+        -webkit-background-clip:text;
+        background-clip:text;
+      "
+    >
+      CRDT
+    </div>
+  </div>
+
+
+  <div class="relative max-w-7xl mx-auto">
+
+    <!-- =========================
+         HEADER
+    ========================== -->
+    <div class="mb-12 flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+
+      <div class="max-w-2xl">
+
+        <div
+          class="mb-5 inline-flex items-center gap-2 rounded-full border border-violet-400/15 bg-violet-400/[0.045] px-3 py-1.5"
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_10px_rgba(167,139,250,.7)]"
+          ></span>
+
+          <span
+            class="text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-500 dark:text-violet-300"
+          >
+            Core Infrastructure
+          </span>
+
+          <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+          <span
+            class="font-mono text-[9px] text-slate-400"
+          >
+            CRDT / ZERO-TRUST / EDGE
+          </span>
+        </div>
+
+
+        <h2
+          class="text-4xl font-black tracking-[-0.06em] text-slate-950 dark:text-white sm:text-5xl"
+        >
+          Built for systems that
+          <span class="heading-gradient">
+            cannot stop.
+          </span>
+        </h2>
+
+        <p
+          class="section-subtext mt-4 max-w-xl leading-7"
+        >
+          AetherSync combines conflict-free data structures, zero-trust
+          security, and globally distributed infrastructure into one
+          synchronization layer.
+        </p>
+
+      </div>
+
+
+      <!-- technical label -->
+      <div
+        class="hidden lg:flex items-center gap-3 rounded-xl border border-black/5 bg-white/50 px-4 py-3 font-mono dark:border-white/10 dark:bg-white/[0.025]"
+      >
+        <span class="text-[9px] text-slate-400">
+          PROTOCOL
+        </span>
+
+        <span class="text-[10px] font-bold text-slate-700 dark:text-slate-200">
+          AETHER / SYNC
+        </span>
+
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         FEATURE GRID
+    ========================== -->
+    <div
+      class="grid gap-4 md:grid-cols-3"
+    >
+
+
+      <!-- =========================
+           CRDT
+      ========================== -->
+      <article
+        class="group relative overflow-hidden rounded-[28px] border border-sky-400/15 bg-gradient-to-br from-sky-400/[0.08] via-white/60 to-transparent p-7 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-sky-400/30 hover:shadow-[0_30px_80px_rgba(56,189,248,.08)] dark:from-sky-400/[0.07] dark:via-white/[0.025] dark:to-transparent"
+      >
+
+        <!-- top glow -->
+        <div
+          class="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl transition-all duration-500 group-hover:bg-sky-400/25"
+        ></div>
+
+
+        <!-- number -->
+        <div
+          class="absolute right-6 top-6 font-mono text-[9px] tracking-[0.2em] text-slate-400/50"
+        >
+          01 / 03
+        </div>
+
+
+        <!-- icon -->
+        <div
+          class="relative grid h-12 w-12 place-items-center rounded-2xl border border-sky-400/20 bg-sky-400/[0.08] shadow-[0_0_30px_rgba(56,189,248,.08)]"
+        >
+          <svg class="h-6 w-6 text-sky-400">
+            <use href="#i-spark"></use>
+          </svg>
+        </div>
+
+
+        <div class="relative mt-7">
+
+          <p
+            class="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-500 dark:text-sky-400"
+          >
+            Distributed state
+          </p>
+
+          <h3
+            class="mt-2 text-2xl font-black tracking-[-0.05em] text-slate-950 dark:text-white"
+          >
+            Conflict-free
+            <br />
+            replication
+          </h3>
+
+          <p
+            class="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400"
+          >
+            CRDTs and operational transforms make concurrent changes
+            merge automatically, deterministically, and without blocking.
+          </p>
+
+
+          <!-- supported types -->
+          <div class="mt-6 flex flex-wrap gap-2">
+
+            <span
+              class="rounded-full border border-black/5 bg-white/60 px-2.5 py-1 font-mono text-[9px] text-slate-500 dark:border-white/5 dark:bg-white/[0.035] dark:text-slate-400"
+            >
+              JSON
+            </span>
+
+            <span
+              class="rounded-full border border-black/5 bg-white/60 px-2.5 py-1 font-mono text-[9px] text-slate-500 dark:border-white/5 dark:bg-white/[0.035] dark:text-slate-400"
+            >
+              TEXT
+            </span>
+
+            <span
+              class="rounded-full border border-black/5 bg-white/60 px-2.5 py-1 font-mono text-[9px] text-slate-500 dark:border-white/5 dark:bg-white/[0.035] dark:text-slate-400"
+            >
+              COUNTERS
+            </span>
+
+            <span
+              class="rounded-full border border-black/5 bg-white/60 px-2.5 py-1 font-mono text-[9px] text-slate-500 dark:border-white/5 dark:bg-white/[0.035] dark:text-slate-400"
+            >
+              SETS
+            </span>
+
+          </div>
+
+
+          <!-- bottom protocol -->
+          <div
+            class="mt-7 flex items-center justify-between border-t border-black/5 pt-4 dark:border-white/5"
+          >
+            <span class="font-mono text-[9px] text-slate-400">
+              MERGE ENGINE
+            </span>
+
+            <span
+              class="flex items-center gap-1.5 text-[9px] font-semibold text-emerald-500"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+              deterministic
+            </span>
+          </div>
+
+        </div>
+      </article>
+
+
+      <!-- =========================
+           SECURITY
+      ========================== -->
+      <article
+        class="group relative overflow-hidden rounded-[28px] border border-violet-400/15 bg-gradient-to-br from-violet-400/[0.08] via-white/60 to-transparent p-7 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-violet-400/30 hover:shadow-[0_30px_80px_rgba(167,139,250,.08)] dark:from-violet-400/[0.07] dark:via-white/[0.025] dark:to-transparent"
+      >
+
+        <div
+          class="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-violet-400/15 blur-3xl transition-all duration-500 group-hover:bg-violet-400/25"
+        ></div>
+
+
+        <div
+          class="absolute right-6 top-6 font-mono text-[9px] tracking-[0.2em] text-slate-400/50"
+        >
+          02 / 03
+        </div>
+
+
+        <div
+          class="relative grid h-12 w-12 place-items-center rounded-2xl border border-violet-400/20 bg-violet-400/[0.08] shadow-[0_0_30px_rgba(167,139,250,.08)]"
+        >
+          <svg class="h-6 w-6 text-violet-400">
+            <use href="#i-lock"></use>
+          </svg>
+        </div>
+
+
+        <div class="relative mt-7">
+
+          <p
+            class="font-mono text-[9px] uppercase tracking-[0.2em] text-violet-500 dark:text-violet-400"
+          >
+            Security layer
+          </p>
+
+          <h3
+            class="mt-2 text-2xl font-black tracking-[-0.05em] text-slate-950 dark:text-white"
+          >
+            Zero-trust
+            <br />
+            security
+          </h3>
+
+          <p
+            class="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400"
+          >
+            Every connection is authenticated, every tenant gets
+            isolated keys, and every synchronization event can be audited.
+          </p>
+
+
+          <!-- security stack -->
+          <div class="mt-6 space-y-2">
+
+            <div
+              class="flex items-center justify-between rounded-xl border border-black/5 bg-white/50 px-3 py-2.5 dark:border-white/5 dark:bg-white/[0.035]"
+            >
+              <span class="font-mono text-[9px] text-slate-500 dark:text-slate-400">
+                E2E encryption
+              </span>
+
+              <span class="text-[9px] font-semibold text-emerald-500">
+                ACTIVE
+              </span>
+            </div>
+
+            <div
+              class="flex items-center justify-between rounded-xl border border-black/5 bg-white/50 px-3 py-2.5 dark:border-white/5 dark:bg-white/[0.035]"
+            >
+              <span class="font-mono text-[9px] text-slate-500 dark:text-slate-400">
+                mTLS
+              </span>
+
+              <span class="text-[9px] font-semibold text-emerald-500">
+                ACTIVE
+              </span>
+            </div>
+
+            <div
+              class="flex items-center justify-between rounded-xl border border-black/5 bg-white/50 px-3 py-2.5 dark:border-white/5 dark:bg-white/[0.035]"
+            >
+              <span class="font-mono text-[9px] text-slate-500 dark:text-slate-400">
+                Audit stream
+              </span>
+
+              <span class="text-[9px] font-semibold text-emerald-500">
+                ACTIVE
+              </span>
+            </div>
+
+          </div>
+
+
+          <div
+            class="mt-7 flex items-center justify-between border-t border-black/5 pt-4 dark:border-white/5"
+          >
+            <span class="font-mono text-[9px] text-slate-400">
+              COMPLIANCE
+            </span>
+
+            <span class="font-mono text-[9px] text-violet-400">
+              SOC2 / HIPAA
+            </span>
+          </div>
+
+        </div>
+      </article>
+
+
+      <!-- =========================
+           GLOBAL
+      ========================== -->
+      <article
+        class="group relative overflow-hidden rounded-[28px] border border-teal-400/15 bg-gradient-to-br from-teal-400/[0.08] via-white/60 to-transparent p-7 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-teal-400/30 hover:shadow-[0_30px_80px_rgba(45,212,191,.08)] dark:from-teal-400/[0.07] dark:via-white/[0.025] dark:to-transparent"
+      >
+
+        <div
+          class="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-teal-400/15 blur-3xl transition-all duration-500 group-hover:bg-teal-400/25"
+        ></div>
+
+
+        <div
+          class="absolute right-6 top-6 font-mono text-[9px] tracking-[0.2em] text-slate-400/50"
+        >
+          03 / 03
+        </div>
+
+
+        <div
+          class="relative grid h-12 w-12 place-items-center rounded-2xl border border-teal-400/20 bg-teal-400/[0.08] shadow-[0_0_30px_rgba(45,212,191,.08)]"
+        >
+          <svg class="h-6 w-6 text-teal-400">
+            <use href="#i-globe"></use>
+          </svg>
+        </div>
+
+
+        <div class="relative mt-7">
+
+          <p
+            class="font-mono text-[9px] uppercase tracking-[0.2em] text-teal-500 dark:text-teal-400"
+          >
+            Global network
+          </p>
+
+          <h3
+            class="mt-2 text-2xl font-black tracking-[-0.05em] text-slate-950 dark:text-white"
+          >
+            Global
+            <br />
+            by default
+          </h3>
+
+          <p
+            class="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400"
+          >
+            Anycast routing, automatic failover, and hundreds of edge
+            locations keep synchronized data close to your users.
+          </p>
+
+
+          <!-- network visualization -->
+          <div
+            class="relative mt-6 h-[108px] overflow-hidden rounded-2xl border border-black/5 bg-black/[0.025] dark:border-white/5 dark:bg-black/20"
+          >
+
+            <!-- grid -->
+            <div
+              class="absolute inset-0 opacity-50"
+              style="
+                background-image:
+                  linear-gradient(rgba(45,212,191,.08) 1px, transparent 1px),
+                  linear-gradient(90deg, rgba(45,212,191,.08) 1px, transparent 1px);
+                background-size:24px 24px;
+              "
+            ></div>
+
+
+            <svg
+              viewBox="0 0 360 108"
+              class="absolute inset-0 h-full w-full"
+              fill="none"
+            >
+
+              <!-- connection lines -->
+              <path
+                d="M180 54 L65 30 M180 54 L105 83 M180 54 L270 27 M180 54 L305 78"
+                stroke="#2dd4bf"
+                stroke-opacity=".22"
+                stroke-width="1"
+              />
+
+              <path
+                d="M65 30 L105 83 M270 27 L305 78"
+                stroke="#2dd4bf"
+                stroke-opacity=".10"
+                stroke-width="1"
+              />
+
+
+              <!-- nodes -->
+              <circle
+                cx="180"
+                cy="54"
+                r="7"
+                fill="#2dd4bf"
+                fill-opacity=".12"
+              />
+
+              <circle
+                cx="180"
+                cy="54"
+                r="3"
+                fill="#2dd4bf"
+              />
+
+              <circle
+                cx="65"
+                cy="30"
+                r="3"
+                fill="#38bdf8"
+              />
+
+              <circle
+                cx="105"
+                cy="83"
+                r="3"
+                fill="#38bdf8"
+              />
+
+              <circle
+                cx="270"
+                cy="27"
+                r="3"
+                fill="#a78bfa"
+              />
+
+              <circle
+                cx="305"
+                cy="78"
+                r="3"
+                fill="#5eead4"
+              />
+
+            </svg>
+
+
+            <div
+              class="absolute bottom-2 left-3 font-mono text-[8px] text-slate-400"
+            >
+              ANYCAST
+            </div>
+
+            <div
+              class="absolute bottom-2 right-3 font-mono text-[8px] text-teal-400"
+            >
+              340+ POP
+            </div>
+
+          </div>
+
+
+          <div
+            class="mt-7 flex items-center justify-between border-t border-black/5 pt-4 dark:border-white/5"
+          >
+            <span class="font-mono text-[9px] text-slate-400">
+              COVERAGE
+            </span>
+
+            <span class="font-mono text-[9px] text-teal-400">
+              6 CONTINENTS
+            </span>
+          </div>
+
+        </div>
+      </article>
+
+    </div>
+
+
+    <!-- =========================
+         BOTTOM STATEMENT
+    ========================== -->
+    <div
+      class="mt-5 flex flex-col gap-4 rounded-2xl border border-black/5 bg-white/40 px-5 py-4 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between"
+    >
+
+      <div class="flex items-center gap-3">
+
+        <span
+          class="grid h-7 w-7 place-items-center rounded-lg border border-sky-400/15 bg-sky-400/[0.06]"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+        </span>
+
+        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+          One synchronization layer.
+          <span class="font-semibold text-slate-800 dark:text-slate-200">
+            Three foundational guarantees.
+          </span>
+        </p>
+
+      </div>
+
+
+      <div class="flex items-center gap-4 font-mono text-[9px] text-slate-400">
+
+        <span>SYNC</span>
+
+        <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+        <span>SECURE</span>
+
+        <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+        <span>GLOBAL</span>
+
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+    <!-- Metrics -->
+
+
+<!-- =========================
+     LIVE METRICS
+========================= -->
+<section
+  id="metrics"
+  class="relative overflow-hidden px-5 py-28 section-rel"
+>
+  <!-- Background grid -->
+  <div
+    class="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.045]"
+    style="
+      background-image:
+        linear-gradient(rgba(56,189,248,.8) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,.8) 1px, transparent 1px);
+      background-size: 48px 48px;
+    "
+  ></div>
+
+  <!-- radial atmosphere -->
+  <div
+    class="pointer-events-none absolute -left-40 top-1/4 h-[500px] w-[500px] rounded-full bg-sky-500/10 blur-[140px]"
+  ></div>
+
+  <div
+    class="pointer-events-none absolute -right-40 bottom-0 h-[500px] w-[500px] rounded-full bg-violet-500/10 blur-[150px]"
+  ></div>
+
+  <!-- scan lines -->
+  <div
+    class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/50 to-transparent"
+  ></div>
+
+  <div
+    class="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-violet-400/30 to-transparent"
+  ></div>
+
+
+  <!-- Giant watermark -->
+  <div
+    class="pointer-events-none absolute inset-0 overflow-hidden select-none"
+    aria-hidden="true"
+  >
+    <div
+      class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[11rem] font-black tracking-[-0.08em] text-transparent opacity-[0.035] dark:opacity-[0.055] sm:text-[16rem] lg:text-[22rem]"
+      style="
+        background:linear-gradient(135deg,#38bdf8,#a78bfa,#f0abfc);
+        -webkit-background-clip:text;
+        background-clip:text;
+      "
+    >
+      LIVE
+    </div>
+  </div>
+
+
+  <div class="relative max-w-7xl mx-auto">
+
+    <!-- =========================
+         SECTION HEADER
+    ========================== -->
+    <div class="grid lg:grid-cols-[1fr_auto] items-end gap-8">
+
+      <div class="max-w-3xl">
+
+        <div
+          class="inline-flex items-center gap-2 rounded-full border border-sky-400/15 bg-sky-400/[0.045] px-3 py-1.5"
+        >
+          <span class="relative flex h-1.5 w-1.5">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60"
+            ></span>
+            <span
+              class="relative h-1.5 w-1.5 rounded-full bg-sky-400"
+            ></span>
+          </span>
+
+          <span
+            class="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-500 dark:text-sky-300"
+          >
+            Live Infrastructure
+          </span>
+
+          <span class="h-3 w-px bg-slate-300 dark:bg-white/10"></span>
+
+          <span
+            class="font-mono text-[9px] uppercase tracking-wider text-slate-400"
+          >
+            30s refresh
+          </span>
+        </div>
+
+
+        <h2
+          class="mt-6 max-w-3xl text-4xl font-black tracking-[-0.055em] text-slate-950 dark:text-white sm:text-5xl lg:text-6xl"
+        >
+          Production data.
+          <span class="heading-gradient">
+            In real time.
+          </span>
+        </h2>
+
+        <p
+          class="mt-5 max-w-2xl text-sm leading-7 text-slate-500 dark:text-slate-400 sm:text-base"
+        >
+          Observe the AetherSync network as it operates across regions,
+          workloads, and millions of synchronized events.
+        </p>
+
+      </div>
+
+
+      <!-- status terminal -->
+      <div
+        class="hidden lg:flex items-center gap-4 rounded-2xl border border-black/5 bg-white/60 px-5 py-4 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025]"
+      >
+        <div
+          class="grid h-10 w-10 place-items-center rounded-xl border border-emerald-400/15 bg-emerald-400/[0.06]"
+        >
+          <span class="relative flex h-2.5 w-2.5">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50"
+            ></span>
+            <span
+              class="relative h-2.5 w-2.5 rounded-full bg-emerald-400"
+            ></span>
+          </span>
+        </div>
+
+        <div>
+          <p
+            class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400"
+          >
+            Network status
+          </p>
+
+          <p
+            class="mt-1 text-sm font-bold text-emerald-500"
+          >
+            All systems operational
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         MAIN METRICS GRID
+    ========================== -->
+    <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-6">
+
+
+      <!-- =========================
+           HERO LATENCY CARD
+      ========================== -->
+      <div
+        class="group relative overflow-hidden rounded-[28px] border border-sky-400/15 bg-gradient-to-br from-sky-400/[0.09] via-white/70 to-violet-400/[0.05] p-7 shadow-[0_25px_80px_rgba(56,189,248,.06)] backdrop-blur-xl dark:from-sky-400/[0.09] dark:via-white/[0.025] dark:to-violet-400/[0.06] md:col-span-3 md:row-span-2"
+      >
+
+        <!-- glow -->
+        <div
+          class="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-sky-400/15 blur-3xl transition-all duration-500 group-hover:bg-sky-400/25"
+        ></div>
+
+        <!-- corner -->
+        <div
+          class="absolute right-5 top-5 font-mono text-[9px] tracking-widest text-slate-400/60"
+        >
+          NET / 01
+        </div>
+
+
+        <div class="relative">
+
+          <div class="flex items-center gap-2">
+            <span
+              class="h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,.8)]"
+            ></span>
+
+            <p class="mono-label mut">
+              Global p50 sync latency
+            </p>
+          </div>
+
+
+          <div class="mt-5 flex items-end gap-3">
+            <p
+              class="text-6xl font-black tracking-[-0.08em] text-slate-950 dark:text-white sm:text-7xl"
+            >
+              <span
+                data-count="3.8"
+                data-dec="1"
+                class="heading-gradient"
+              >0</span>
+            </p>
+
+            <span
+              class="mb-2 font-mono text-sm text-slate-400"
+            >
+              ms
+            </span>
+          </div>
+
+
+          <div class="mt-4 flex items-center gap-3">
+            <span
+              class="rounded-full border border-emerald-400/15 bg-emerald-400/[0.06] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-emerald-500"
+            >
+              −18.4%
+            </span>
+
+            <span class="text-xs text-slate-400">
+              vs previous 30 days
+            </span>
+          </div>
+
+
+          <!-- chart -->
+          <div class="relative mt-8 h-32 overflow-hidden rounded-xl border border-black/5 bg-black/[0.02] dark:border-white/5 dark:bg-black/20">
+
+            <!-- chart grid -->
+            <div
+              class="absolute inset-0 opacity-40"
+              style="
+                background-image:
+                  linear-gradient(rgba(148,163,184,.08) 1px, transparent 1px),
+                  linear-gradient(90deg, rgba(148,163,184,.08) 1px, transparent 1px);
+                background-size:32px 32px;
+              "
+            ></div>
+
+            <svg
+              viewBox="0 0 500 130"
+              preserveAspectRatio="none"
+              class="absolute inset-0 h-full w-full"
+            >
+              <defs>
+                <linearGradient
+                  id="metricArea"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    stop-color="#38bdf8"
+                    stop-opacity=".28"
+                  />
+                  <stop
+                    offset="100%"
+                    stop-color="#38bdf8"
+                    stop-opacity="0"
+                  />
+                </linearGradient>
+
+                <linearGradient
+                  id="metricLine"
+                  x1="0"
+                  y1="0"
+                  x2="1"
+                  y2="0"
+                >
+                  <stop stop-color="#38bdf8"/>
+                  <stop offset=".55" stop-color="#818cf8"/>
+                  <stop offset="1" stop-color="#e879f9"/>
+                </linearGradient>
+              </defs>
+
+              <path
+                d="M0 94 C30 88 45 100 70 80 S115 92 140 65 S185 75 215 58 S260 70 290 45 S340 62 365 36 S415 50 445 27 S475 38 500 18 V130 H0 Z"
+                fill="url(#metricArea)"
+              />
+
+              <path
+                d="M0 94 C30 88 45 100 70 80 S115 92 140 65 S185 75 215 58 S260 70 290 45 S340 62 365 36 S415 50 445 27 S475 38 500 18"
+                fill="none"
+                stroke="url(#metricLine)"
+                stroke-width="2.5"
+              />
+
+              <circle
+                cx="500"
+                cy="18"
+                r="4"
+                fill="#38bdf8"
+              />
+
+              <circle
+                cx="500"
+                cy="18"
+                r="9"
+                fill="#38bdf8"
+                opacity=".12"
+              />
+            </svg>
+
+            <div
+              class="absolute bottom-2 left-3 font-mono text-[8px] text-slate-400"
+            >
+              30D
+            </div>
+
+            <div
+              class="absolute bottom-2 right-3 font-mono text-[8px] text-slate-400"
+            >
+              NOW
+            </div>
+
+          </div>
+
+
+          <div class="mt-5 grid grid-cols-2 gap-3">
+
+            <div
+              class="rounded-xl border border-black/5 bg-white/50 p-3 dark:border-white/5 dark:bg-white/[0.025]"
+            >
+              <p class="text-[9px] uppercase tracking-wider text-slate-400">
+                p99 latency
+              </p>
+
+              <p class="mt-1 font-mono text-sm font-bold">
+                11.2 ms
+              </p>
+            </div>
+
+            <div
+              class="rounded-xl border border-black/5 bg-white/50 p-3 dark:border-white/5 dark:bg-white/[0.025]"
+            >
+              <p class="text-[9px] uppercase tracking-wider text-slate-400">
+                Regions
+              </p>
+
+              <p class="mt-1 font-mono text-sm font-bold">
+                6 continents
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+
+      <!-- =========================
+           EDGE NODES
+      ========================== -->
+      <div
+        class="group relative overflow-hidden rounded-[28px] border border-black/5 bg-white/65 p-6 backdrop-blur-xl transition-all duration-300 hover:border-sky-400/20 hover:shadow-[0_20px_60px_rgba(56,189,248,.06)] dark:border-white/10 dark:bg-white/[0.025] md:col-span-3"
+      >
+
+        <div class="flex items-start justify-between">
+
+          <div>
+            <p class="mono-label mut">
+              Active edge nodes
+            </p>
+
+            <div class="mt-3 flex items-end gap-2">
+              <span
+                data-count="342"
+                class="text-4xl font-black tracking-[-0.06em]"
+              >0</span>
+
+              <span class="mb-1 font-mono text-xs text-slate-400">
+                POPs
+              </span>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-2.5 py-1.5"
+          >
+            <span
+              class="h-1.5 w-1.5 rounded-full bg-emerald-400"
+            ></span>
+
+            <span class="text-[9px] font-semibold uppercase tracking-wider text-emerald-500">
+              Online
+            </span>
+          </div>
+
+        </div>
+
+
+        <div class="mt-6 space-y-4">
+
+          <div>
+            <div class="mb-1.5 flex justify-between text-[10px]">
+              <span class="text-slate-400">Europe</span>
+              <span class="font-mono text-slate-500">118</span>
+            </div>
+
+            <div class="h-1 overflow-hidden rounded-full bg-slate-500/10">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-sky-400 to-violet-400"
+                style="width:86%"
+              ></div>
+            </div>
+          </div>
+
+
+          <div>
+            <div class="mb-1.5 flex justify-between text-[10px]">
+              <span class="text-slate-400">North America</span>
+              <span class="font-mono text-slate-500">104</span>
+            </div>
+
+            <div class="h-1 overflow-hidden rounded-full bg-slate-500/10">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-sky-400 to-violet-400"
+                style="width:76%"
+              ></div>
+            </div>
+          </div>
+
+
+          <div>
+            <div class="mb-1.5 flex justify-between text-[10px]">
+              <span class="text-slate-400">Asia Pacific</span>
+              <span class="font-mono text-slate-500">92</span>
+            </div>
+
+            <div class="h-1 overflow-hidden rounded-full bg-slate-500/10">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-sky-400 to-violet-400"
+                style="width:67%"
+              ></div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <!-- =========================
+           UPTIME
+      ========================== -->
+      <div
+        class="group rounded-[28px] border border-black/5 bg-white/65 p-6 backdrop-blur-xl transition-all duration-300 hover:border-emerald-400/20 dark:border-white/10 dark:bg-white/[0.025] md:col-span-1"
+      >
+        <div class="flex items-center justify-between">
+          <p class="mono-label mut">Uptime</p>
+
+          <span class="text-emerald-400 text-xs">
+            ●
+          </span>
+        </div>
+
+        <p
+          class="mt-5 text-3xl font-black tracking-[-0.06em]"
+        >
+          99.998%
+        </p>
+
+        <p class="mt-1 text-[10px] text-slate-400">
+          trailing 12 months
+        </p>
+      </div>
+
+
+      <!-- =========================
+           THROUGHPUT
+      ========================== -->
+      <div
+        class="group rounded-[28px] border border-black/5 bg-white/65 p-6 backdrop-blur-xl transition-all duration-300 hover:border-violet-400/20 dark:border-white/10 dark:bg-white/[0.025] md:col-span-2"
+      >
+        <p class="mono-label mut">
+          Peak throughput
+        </p>
+
+        <div class="mt-3 flex items-end gap-2">
+          <span
+            data-count="18.4"
+            data-dec="1"
+            class="text-3xl font-black tracking-[-0.06em] heading-gradient"
+          >0</span>
+
+          <span class="mb-1 font-mono text-xs text-slate-400">
+            M msg/s
+          </span>
+        </div>
+
+        <div class="mt-4 flex items-center gap-2">
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-violet-400"
+          ></span>
+
+          <span class="text-[10px] text-slate-400">
+            Black Friday 2025
+          </span>
+        </div>
+      </div>
+
+
+      <!-- =========================
+           MINI BAR CHART
+      ========================== -->
+      <div
+        class="relative overflow-hidden rounded-[28px] border border-black/5 bg-white/65 p-6 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025] md:col-span-2"
+      >
+
+        <div class="flex items-center justify-between">
+          <p class="mono-label mut">
+            Throughput / 12 min
+          </p>
+
+          <span
+            class="font-mono text-[9px] text-slate-400"
+          >
+            LIVE
+          </span>
+        </div>
+
+        <div
+          id="bars"
+          class="mt-5 flex h-24 items-end gap-1"
+        ></div>
+
+      </div>
+
+
+      <!-- =========================
+           SYSTEM STREAM
+      ========================== -->
+      <div
+        class="relative overflow-hidden rounded-[28px] border border-black/5 bg-[#070b12] p-6 text-white shadow-[0_25px_70px_rgba(0,0,0,.08)] dark:border-white/10 md:col-span-4"
+      >
+
+        <!-- terminal glow -->
+        <div
+          class="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl"
+        ></div>
+
+        <div class="relative">
+
+          <div class="flex items-center justify-between">
+
+            <div class="flex items-center gap-3">
+
+              <div class="flex gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-red-400/70"></span>
+                <span class="h-2 w-2 rounded-full bg-yellow-400/70"></span>
+                <span class="h-2 w-2 rounded-full bg-emerald-400/70"></span>
+              </div>
+
+              <span
+                class="font-mono text-[10px] text-slate-400"
+              >
+                system.log
+              </span>
+
+            </div>
+
+
+            <span
+              class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider text-emerald-400"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+              streaming
+            </span>
+
+          </div>
+
+
+          <div
+            id="log"
+            class="mt-5 h-36 overflow-hidden space-y-2 font-mono text-[10px] leading-relaxed text-slate-400"
+          ></div>
+
+
+          <div
+            class="mt-4 flex items-center gap-2 border-t border-white/5 pt-3"
+          >
+            <span class="text-sky-400">›</span>
+
+            <span
+              class="text-[9px] uppercase tracking-[0.15em] text-slate-500"
+            >
+              network event stream
+            </span>
+
+            <span
+              class="ml-auto font-mono text-[9px] text-slate-600"
+            >
+              AETHERSYNC / LIVE
+            </span>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         BOTTOM NETWORK STRIP
+    ========================== -->
+    <div
+      class="mt-5 grid grid-cols-2 overflow-hidden rounded-[24px] border border-black/5 bg-white/50 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-4"
+    >
+
+      <div
+        class="border-b border-r border-black/5 p-5 dark:border-white/5 sm:border-b-0"
+      >
+        <p class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">
+          Events synced
+        </p>
+
+        <p class="mt-2 text-xl font-black tracking-[-0.04em]">
+          4.8B+
+        </p>
+      </div>
+
+
+      <div
+        class="border-b border-black/5 p-5 dark:border-white/5 sm:border-b-0 sm:border-r"
+      >
+        <p class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">
+          Regions
+        </p>
+
+        <p class="mt-2 text-xl font-black tracking-[-0.04em]">
+          42
+        </p>
+      </div>
+
+
+      <div
+        class="border-r border-black/5 p-5 dark:border-white/5"
+      >
+        <p class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">
+          API availability
+        </p>
+
+        <p class="mt-2 text-xl font-black tracking-[-0.04em]">
+          99.99%
+        </p>
+      </div>
+
+
+      <div class="p-5">
+        <p class="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">
+          Data freshness
+        </p>
+
+        <p class="mt-2 text-xl font-black tracking-[-0.04em]">
+          &lt; 30s
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+
+    <!-- Features + code -->
+ 
+
+
+
+
+<section
+  id="features"
+  class="relative overflow-hidden px-5 py-24 section-rel"
+>
+
+  <!-- =========================================================
+       BACKGROUND
+  ========================================================== -->
+
+  <div class="pointer-events-none absolute inset-0">
+
+    <!-- Grid -->
+    <div
+      class="absolute inset-0 opacity-[0.035] dark:opacity-[0.05]"
+      style="
+        background-image:
+          linear-gradient(to right,currentColor 1px,transparent 1px),
+          linear-gradient(to bottom,currentColor 1px,transparent 1px);
+        background-size:64px 64px;
+      "
+    ></div>
+
+    <!-- Scan lines -->
+    <div
+      class="absolute left-0 right-0 top-[15%] h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent"
+    ></div>
+
+    <div
+      class="absolute left-0 right-0 bottom-[20%] h-px bg-gradient-to-r from-transparent via-violet-400/20 to-transparent"
+    ></div>
+
+    <!-- Glow -->
+    <div
+      class="absolute -left-40 top-20 h-[450px] w-[450px] rounded-full bg-cyan-400/10 blur-[150px]"
+    ></div>
+
+    <div
+      class="absolute -right-40 bottom-10 h-[450px] w-[450px] rounded-full bg-violet-500/10 blur-[150px]"
+    ></div>
+
+    <!-- Watermark -->
+    <div
+      class="absolute -right-10 -top-10 select-none text-[clamp(8rem,20vw,18rem)] font-black uppercase tracking-[-0.1em] leading-none"
+      style="
+        background:linear-gradient(
+          135deg,
+          rgba(94,234,212,.10),
+          rgba(167,139,250,.07),
+          rgba(56,189,248,.04)
+        );
+        -webkit-background-clip:text;
+        background-clip:text;
+        color:transparent;
+      "
+      aria-hidden="true"
+    >
+      CODE
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       MAIN CONTAINER
+  ========================================================== -->
+
+  <div class="relative mx-auto max-w-6xl">
+
+
+    <!-- =======================================================
+         SECTION HEADER
+    ======================================================== -->
+
+    <div class="mb-14 max-w-2xl">
+
+      <div class="section-eyebrow mb-5">
+        <span class="relative flex h-1.5 w-1.5">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60"></span>
+          <span class="relative h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+        </span>
+        Developer infrastructure
+        <span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[8px] tracking-[0.18em]">
+          API / SDK
+        </span>
+      </div>
+
+
+      <h2 class="section-heading">
+        Five lines.
+        <span class="heading-gradient">
+          One synced system.
+        </span>
+      </h2>
+
+
+      <p class="section-subtext mt-5 max-w-xl">
+        Build real-time products with a unified API. AetherSync handles
+        synchronization, encryption, routing, and failover while your team
+        focuses on the product.
+      </p>
+
+    </div>
+
+
+    <!-- =======================================================
+         MAIN FEATURE LAYOUT
+    ======================================================== -->
+
+    <div class="grid items-start gap-7 lg:grid-cols-[1.3fr_.7fr]">
+
+
+      <!-- =====================================================
+           CODE TERMINAL
+      ====================================================== -->
+
+      <div
+        class="group relative overflow-hidden rounded-[26px] border border-slate-800/80 bg-[#060912] shadow-2xl shadow-cyan-950/20"
+      >
+
+        <!-- Terminal glow -->
+
+        <div
+          class="pointer-events-none absolute -right-32 -top-32 h-72 w-72 rounded-full bg-cyan-500/10 blur-[100px]"
+        ></div>
+
+        <div
+          class="pointer-events-none absolute -bottom-32 -left-32 h-72 w-72 rounded-full bg-violet-500/10 blur-[100px]"
+        ></div>
+
+
+        <!-- Terminal header -->
+
+        <div
+          class="relative flex h-14 items-center border-b border-white/[0.07] px-4"
+        >
+
+          <!-- Traffic lights -->
+
+          <div class="flex items-center gap-1.5">
+
+            <span class="h-2.5 w-2.5 rounded-full bg-rose-400/90"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-amber-300/90"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-400/90"></span>
+
+          </div>
+
+
+          <!-- Terminal title -->
+
+          <div
+            class="absolute left-1/2 -translate-x-1/2 font-mono text-[9px] uppercase tracking-[0.22em] text-slate-600"
+          >
+            aether://developer
+          </div>
+
+
+          <!-- Status -->
+
+          <div class="ml-auto flex items-center gap-2">
+
+            <span
+              class="relative flex h-1.5 w-1.5"
+            >
+              <span
+                class="absolute h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"
+              ></span>
+
+              <span
+                class="relative h-1.5 w-1.5 rounded-full bg-emerald-400"
+              ></span>
+            </span>
+
+            <span
+              class="font-mono text-[8px] uppercase tracking-wider text-slate-600"
+            >
+              connected
+            </span>
+
+          </div>
+
+        </div>
+
+
+        <!-- Tabs -->
+
+        <div
+          class="relative flex items-center gap-1 border-b border-white/[0.06] px-4 py-2"
+        >
+
+          <button
+            type="button"
+            class="feature-code-tab rounded-md bg-white/[0.08] px-3 py-1.5 font-mono text-[9px] text-slate-200 transition-all"
+            data-code="js"
+          >
+            app.js
+          </button>
+
+          <button
+            type="button"
+            class="feature-code-tab rounded-md px-3 py-1.5 font-mono text-[9px] text-slate-500 transition-all hover:bg-white/[0.05] hover:text-slate-300"
+            data-code="py"
+          >
+            sync.py
+          </button>
+
+          <button
+            type="button"
+            class="feature-code-tab rounded-md px-3 py-1.5 font-mono text-[9px] text-slate-500 transition-all hover:bg-white/[0.05] hover:text-slate-300"
+            data-code="go"
+          >
+            main.go
+          </button>
+
+        </div>
+
+
+        <!-- Code body -->
+
+        <div class="relative min-h-[390px]">
+
+          <!-- Line numbers -->
+
+          <div
+            id="featureLineNumbers"
+            class="pointer-events-none absolute left-0 top-0 w-11 select-none border-r border-white/[0.04] py-6 text-right font-mono text-[10px] leading-6 text-slate-700"
+          ></div>
+
+
+          <pre
+            id="featureCode"
+            class="relative z-10 min-h-[390px] overflow-x-auto px-14 py-6 font-mono text-[11px] leading-6 text-slate-300"
+          ></pre>
+
+
+          <!-- Scan animation -->
+
+          <div
+            class="pointer-events-none absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+            id="codeScan"
+          ></div>
+
+        </div>
+
+
+        <!-- Terminal footer -->
+
+        <div
+          class="relative flex flex-col gap-2 border-t border-white/[0.07] px-5 py-4 font-mono text-[9px] sm:flex-row sm:items-center sm:justify-between"
+        >
+
+          <div class="flex items-center gap-2 text-emerald-300/80">
+
+            <span class="text-cyan-400">$</span>
+
+            <span id="featureTerminal">
+              aether deploy --region eu-west,ap-south
+            </span>
+
+          </div>
+
+          <span
+            class="text-slate-700"
+          >
+            latency: 24ms
+          </span>
+
+        </div>
+
+      </div>
+
+
+      <!-- =====================================================
+           FEATURE CARDS
+      ====================================================== -->
+
+      <div class="space-y-3">
+
+
+        <!-- Card 01 -->
+
+        <article
+          class="feature-detail group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 p-5 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/50 hover:shadow-xl hover:shadow-cyan-500/10 dark:border-white/[0.07] dark:bg-white/[0.025]"
+          data-feature="encryption"
+        >
+
+          <div
+            class="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          ></div>
+
+
+          <div class="relative flex gap-4">
+
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-400"
+            >
+
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+              >
+                <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+                <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+                <path d="M12 14v3"></path>
+              </svg>
+
+            </div>
+
+
+            <div class="min-w-0">
+
+              <div class="flex items-center justify-between gap-3">
+
+                <h3
+                  class="text-[13px] font-black tracking-[-0.02em] text-slate-900 dark:text-white"
+                >
+                  End-to-end encryption
+                </h3>
+
+                <span
+                  class="font-mono text-[8px] text-cyan-500"
+                >
+                  01
+                </span>
+
+              </div>
+
+              <p
+                class="mt-1.5 text-[11px] leading-5 text-slate-500 dark:text-slate-400"
+              >
+                AES-256-GCM with keys held in your KMS.
+                Your data stays encrypted throughout the pipeline.
+              </p>
+
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- Card 02 -->
+
+        <article
+          class="feature-detail group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 p-5 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-violet-300/50 hover:shadow-xl hover:shadow-violet-500/10 dark:border-white/[0.07] dark:bg-white/[0.025]"
+          data-feature="failover"
+        >
+
+          <div
+            class="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-violet-400/10 blur-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          ></div>
+
+
+          <div class="relative flex gap-4">
+
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10 text-violet-400"
+            >
+
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+              >
+                <circle cx="12" cy="12" r="8"></circle>
+                <path d="M4 12h16"></path>
+                <path d="M12 4c2.2 2.2 3.3 4.9 3.3 8S14.2 17.8 12 20"></path>
+                <path d="M12 4c-2.2 2.2-3.3 4.9-3.3 8s1.1 5.8 3.3 8"></path>
+              </svg>
+
+            </div>
+
+
+            <div class="min-w-0">
+
+              <div class="flex items-center justify-between gap-3">
+
+                <h3
+                  class="text-[13px] font-black tracking-[-0.02em] text-slate-900 dark:text-white"
+                >
+                  Multi-region failover
+                </h3>
+
+                <span
+                  class="font-mono text-[8px] text-violet-500"
+                >
+                  02
+                </span>
+
+              </div>
+
+              <p
+                class="mt-1.5 text-[11px] leading-5 text-slate-500 dark:text-slate-400"
+              >
+                Region health is continuously monitored and traffic
+                automatically reroutes when infrastructure fails.
+              </p>
+
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- Card 03 -->
+
+        <article
+          class="feature-detail group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 p-5 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-fuchsia-300/50 hover:shadow-xl hover:shadow-fuchsia-500/10 dark:border-white/[0.07] dark:bg-white/[0.025]"
+          data-feature="scaling"
+        >
+
+          <div
+            class="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-fuchsia-400/10 blur-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          ></div>
+
+
+          <div class="relative flex gap-4">
+
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-400"
+            >
+
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+              >
+                <path d="M4 18V9"></path>
+                <path d="M9 18V5"></path>
+                <path d="M14 18v-7"></path>
+                <path d="M19 18V3"></path>
+                <path d="M3 21h18"></path>
+              </svg>
+
+            </div>
+
+
+            <div class="min-w-0">
+
+              <div class="flex items-center justify-between gap-3">
+
+                <h3
+                  class="text-[13px] font-black tracking-[-0.02em] text-slate-900 dark:text-white"
+                >
+                  Automatic load balancing
+                </h3>
+
+                <span
+                  class="font-mono text-[8px] text-fuchsia-500"
+                >
+                  03
+                </span>
+
+              </div>
+
+              <p
+                class="mt-1.5 text-[11px] leading-5 text-slate-500 dark:text-slate-400"
+              >
+                Hot keys and uneven traffic are automatically distributed
+                across shards without configuration changes.
+              </p>
+
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- Small metrics -->
+
+        <div
+          class="grid grid-cols-2 gap-3 pt-1"
+        >
+
+          <div
+            class="rounded-2xl border border-slate-200/70 bg-white/50 px-4 py-4 dark:border-white/[0.06] dark:bg-white/[0.02]"
+          >
+
+            <div
+              class="mono-label text-slate-400"
+            >
+              Regions
+            </div>
+
+            <div
+              class="mt-1 text-xl font-black tracking-[-0.05em] text-slate-900 dark:text-white"
+            >
+              340+
+            </div>
+
+          </div>
+
+
+          <div
+            class="rounded-2xl border border-slate-200/70 bg-white/50 px-4 py-4 dark:border-white/[0.06] dark:bg-white/[0.02]"
+          >
+
+            <div
+              class="mono-label text-slate-400"
+            >
+              SLA
+            </div>
+
+            <div
+              class="mt-1 text-xl font-black tracking-[-0.05em] text-slate-900 dark:text-white"
+            >
+              99.99%
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- =======================================================
+         BOTTOM DEVELOPER STRIP
+    ======================================================== -->
+
+    <div
+      class="mt-8 flex flex-col gap-4 border-t border-slate-200/70 pt-5 dark:border-white/[0.07] sm:flex-row sm:items-center sm:justify-between"
+    >
+
+      <div
+        class="flex items-center gap-3"
+      >
+
+        <span
+          class="mono-label text-slate-400"
+        >
+          Supported
+        </span>
+
+        <div class="flex items-center gap-2">
+
+          <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-[9px] text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+            JS
+          </span>
+
+          <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-[9px] text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+            PY
+          </span>
+
+          <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-[9px] text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+            GO
+          </span>
+
+          <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-[9px] text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+            SWIFT
+          </span>
+
+        </div>
+
+      </div>
+
+
+      <a
+        href="#docs"
+        class="group inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-cyan-400 dark:text-slate-400"
+      >
+        Explore documentation
+
+        <span
+          class="transition-transform duration-300 group-hover:translate-x-1"
+        >
+          →
+        </span>
+
+      </a>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+    <!-- Pricing -->
+    
+
+
+
+<section
+  id="pricing"
+  class="relative overflow-hidden px-5 py-24 section-rel"
+>
+
+  <!-- =========================================================
+       FUTURISTIC BACKGROUND
+  ========================================================== -->
+
+  <div class="pointer-events-none absolute inset-0">
+
+    <!-- Grid -->
+    <div
+      class="absolute inset-0 opacity-[0.035] dark:opacity-[0.05]"
+      style="
+        background-image:
+          linear-gradient(to right,currentColor 1px,transparent 1px),
+          linear-gradient(to bottom,currentColor 1px,transparent 1px);
+        background-size:64px 64px;
+      "
+    ></div>
+
+    <!-- Horizontal scan lines -->
+    <div
+      class="absolute left-0 right-0 top-[18%] h-px bg-gradient-to-r from-transparent via-sky-400/30 to-transparent"
+    ></div>
+
+    <div
+      class="absolute left-0 right-0 bottom-[18%] h-px bg-gradient-to-r from-transparent via-fuchsia-400/20 to-transparent"
+    ></div>
+
+    <!-- Glows -->
+    <div
+      class="absolute -left-40 top-20 h-[420px] w-[420px] rounded-full bg-sky-500/10 blur-[140px]"
+    ></div>
+
+    <div
+      class="absolute -right-40 bottom-0 h-[420px] w-[420px] rounded-full bg-fuchsia-500/10 blur-[140px]"
+    ></div>
+
+    <!-- Watermark -->
+    <div
+      class="absolute -bottom-8 left-1/2 -translate-x-1/2 select-none whitespace-nowrap text-[clamp(7rem,19vw,18rem)] font-black uppercase tracking-[-0.09em] leading-none"
+      style="
+        background:linear-gradient(
+          135deg,
+          rgba(56,189,248,.10),
+          rgba(192,132,252,.07),
+          rgba(244,114,182,.05)
+        );
+        -webkit-background-clip:text;
+        background-clip:text;
+        color:transparent;
+      "
+      aria-hidden="true"
+    >
+      PRICING
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       CONTAINER
+  ========================================================== -->
+
+  <div class="relative mx-auto max-w-6xl">
+
+
+    <!-- =======================================================
+         HEADER
+    ======================================================== -->
+
+    <div class="mx-auto max-w-2xl text-center">
+
+      <!-- Eyebrow -->
+
+      <div
+        class="mb-5 inline-flex items-center gap-3 rounded-full border border-slate-200/80 bg-white/70 px-3.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.25em] text-slate-500 shadow-sm backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.025] dark:text-slate-400"
+      >
+
+        <span class="relative flex h-1.5 w-1.5">
+          <span
+            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60"
+          ></span>
+
+          <span
+            class="relative h-1.5 w-1.5 rounded-full bg-sky-400"
+          ></span>
+        </span>
+
+        Simple infrastructure pricing
+
+      </div>
+
+
+      <!-- Heading -->
+
+      <h2 class="section-heading">
+        Scale without the
+        <span class="heading-gradient">
+          surprises.
+        </span>
+      </h2>
+
+
+      <!-- Description -->
+
+      <p
+        class="mx-auto mt-5 max-w-xl section-subtext"
+      >
+        Start small, grow globally, and pay for exactly what your
+        infrastructure needs. Every plan includes the core AetherSync
+        platform.
+      </p>
+
+
+      <!-- =====================================================
+           BILLING SWITCH
+      ====================================================== -->
+
+      <div class="mt-8 flex items-center justify-center">
+
+        <div
+          class="relative inline-flex items-center rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.035]"
+          id="billingToggle"
+        >
+
+          <button
+            type="button"
+            data-billing="monthly"
+            class="billing-btn relative z-10 rounded-full px-5 py-2 text-[10px] font-bold tracking-wide text-slate-900 transition-all dark:text-white"
+          >
+            Monthly
+          </button>
+
+          <button
+            type="button"
+            data-billing="yearly"
+            class="billing-btn relative z-10 rounded-full px-5 py-2 text-[10px] font-bold tracking-wide text-slate-500 transition-all dark:text-slate-400"
+          >
+            Yearly
+          </button>
+
+          <span
+            class="absolute left-1 top-1 h-[30px] w-[82px] rounded-full bg-slate-100 shadow-sm transition-all duration-300 dark:bg-white/[0.09]"
+            id="billingIndicator"
+          ></span>
+
+        </div>
+
+
+        <span
+          class="ml-3 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-emerald-500"
+        >
+          Save 20%
+        </span>
+
+      </div>
+
+    </div>
+
+
+    <!-- =======================================================
+         PRICING CARDS
+    ======================================================== -->
+
+    <div class="mt-14 grid gap-5 lg:grid-cols-3">
+
+
+      <!-- =====================================================
+           STARTER
+      ====================================================== -->
+
+      <article
+        class="pricing-card group relative overflow-hidden rounded-[26px] border border-slate-200/80 bg-white/70 p-6 backdrop-blur-xl transition-all duration-500 hover:-translate-y-2 hover:border-sky-300/50 hover:shadow-2xl hover:shadow-sky-500/10 dark:border-white/[0.08] dark:bg-white/[0.025]"
+        data-tilt
+      >
+
+        <!-- top glow -->
+        <div
+          class="pointer-events-none absolute -right-20 -top-20 h-40 w-40 rounded-full bg-sky-400/10 blur-3xl transition-opacity group-hover:opacity-100"
+        ></div>
+
+
+        <div class="relative">
+
+          <!-- Plan label -->
+
+          <div class="flex items-center justify-between">
+
+            <div>
+              <p
+                class="mono-label text-slate-400"
+              >
+                01 / START
+              </p>
+
+              <h3
+                class="mt-2 text-xl font-black tracking-[-0.04em] text-slate-950 dark:text-white"
+              >
+                Starter
+              </h3>
+            </div>
+
+            <span
+              class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:border-white/[0.07] dark:bg-white/[0.035] dark:text-slate-400"
+            >
+              Free
+            </span>
+
+          </div>
+
+
+          <!-- Price -->
+
+          <div class="mt-7 flex items-end gap-1">
+
+            <span
+              class="price-value text-4xl font-black tracking-[-0.07em] text-slate-950 dark:text-white"
+              data-monthly="0"
+              data-yearly="0"
+            >
+              $0
+            </span>
+
+            <span
+              class="mb-1 text-[11px] text-slate-400"
+            >
+              /month
+            </span>
+
+          </div>
+
+
+          <p class="mt-3 min-h-[42px] text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+            Everything needed to prototype and launch your first connected product.
+          </p>
+
+
+          <!-- CTA -->
+
+          <a
+            href="#"
+            class="mt-6 flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-sky-300 hover:text-sky-500 dark:border-white/[0.08] dark:bg-white/[0.035] dark:text-slate-300 dark:hover:border-sky-400/30 dark:hover:text-sky-300"
+          >
+            Start building
+          </a>
+
+
+          <!-- Divider -->
+
+          <div class="my-6 h-px bg-slate-200/80 dark:bg-white/[0.07]"></div>
+
+
+          <!-- Features -->
+
+          <p
+            class="mb-4 mono-label text-slate-400"
+          >
+            Includes
+          </p>
+
+          <ul class="space-y-3 text-[11px] text-slate-500 dark:text-slate-400">
+
+            <li class="flex gap-2.5">
+              <span class="text-sky-400">✓</span>
+              1M messages / month
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-sky-400">✓</span>
+              3 edge regions
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-sky-400">✓</span>
+              Core sync engine
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-sky-400">✓</span>
+              Community support
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-sky-400">✓</span>
+              Basic observability
+            </li>
+
+          </ul>
+
+        </div>
+
+      </article>
+
+
+
+      <!-- =====================================================
+           SCALE — FEATURED
+      ====================================================== -->
+
+      <article
+        class="pricing-card featured group relative -translate-y-1 overflow-hidden rounded-[26px] border border-violet-400/30 bg-gradient-to-b from-violet-500/[0.09] via-white/[0.04] to-cyan-400/[0.04] p-[1px] shadow-2xl shadow-violet-500/10 transition-all duration-500 hover:-translate-y-3 hover:shadow-violet-500/20 dark:bg-white/[0.025]"
+        data-tilt
+      >
+
+        <!-- Animated border -->
+
+        <div
+          class="absolute inset-0 rounded-[26px] bg-gradient-to-br from-violet-500/40 via-transparent to-cyan-400/30 opacity-70"
+        ></div>
+
+
+        <div
+          class="relative h-full overflow-hidden rounded-[25px] bg-white/90 p-6 backdrop-blur-2xl dark:bg-[#080910]/95"
+        >
+
+          <!-- Glow -->
+
+          <div
+            class="pointer-events-none absolute -right-24 -top-24 h-52 w-52 rounded-full bg-violet-500/20 blur-[70px]"
+          ></div>
+
+          <div
+            class="pointer-events-none absolute -bottom-24 -left-24 h-52 w-52 rounded-full bg-cyan-400/10 blur-[70px]"
+          ></div>
+
+
+          <!-- Popular -->
+
+          <div
+            class="absolute right-5 top-5 rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1 text-[8px] font-bold uppercase tracking-[0.18em] text-violet-500 dark:text-violet-300"
+          >
+            Most flexible
+          </div>
+
+
+          <div class="relative">
+
+            <p
+              class="mono-label text-violet-500/80"
+            >
+              02 / SCALE
+            </p>
+
+            <h3
+              class="mt-2 text-xl font-black tracking-[-0.04em] text-slate-950 dark:text-white"
+            >
+              Scale
+            </h3>
+
+
+            <!-- Price -->
+
+            <div class="mt-7 flex items-end gap-1">
+
+              <span
+                class="price-value text-4xl font-black tracking-[-0.07em] text-slate-950 dark:text-white"
+                data-monthly="149"
+                data-yearly="119"
+              >
+                $149
+              </span>
+
+              <span class="mb-1 text-[11px] text-slate-400">
+                /month
+              </span>
+
+            </div>
+
+
+            <p class="mt-3 min-h-[42px] text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+              Production-grade infrastructure for teams shipping globally.
+            </p>
+
+
+            <!-- CTA -->
+
+            <a
+              href="#"
+              class="mt-6 flex h-10 items-center justify-center rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 text-[10px] font-bold uppercase tracking-[0.12em] text-white shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02] hover:shadow-violet-500/30"
+            >
+              Deploy at scale
+            </a>
+
+
+            <div class="my-6 h-px bg-gradient-to-r from-violet-400/20 via-slate-200/80 to-cyan-400/20 dark:via-white/[0.07]"></div>
+
+
+            <p
+              class="mb-4 mono-label text-slate-400"
+            >
+              Everything in Starter, plus
+            </p>
+
+
+            <ul class="space-y-3 text-[11px] text-slate-600 dark:text-slate-300">
+
+              <li class="flex gap-2.5">
+                <span class="text-violet-400">✦</span>
+                500M messages / month
+              </li>
+
+              <li class="flex gap-2.5">
+                <span class="text-violet-400">✦</span>
+                All edge regions
+              </li>
+
+              <li class="flex gap-2.5">
+                <span class="text-violet-400">✦</span>
+                99.99% SLA
+              </li>
+
+              <li class="flex gap-2.5">
+                <span class="text-violet-400">✦</span>
+                SSO & advanced security
+              </li>
+
+              <li class="flex gap-2.5">
+                <span class="text-violet-400">✦</span>
+                Priority support
+              </li>
+
+            </ul>
+
+          </div>
+
+        </div>
+
+      </article>
+
+
+
+      <!-- =====================================================
+           ENTERPRISE
+      ====================================================== -->
+
+      <article
+        class="pricing-card group relative overflow-hidden rounded-[26px] border border-slate-200/80 bg-white/70 p-6 backdrop-blur-xl transition-all duration-500 hover:-translate-y-2 hover:border-fuchsia-300/40 hover:shadow-2xl hover:shadow-fuchsia-500/10 dark:border-white/[0.08] dark:bg-white/[0.025]"
+        data-tilt
+      >
+
+        <div
+          class="pointer-events-none absolute -bottom-20 -right-20 h-44 w-44 rounded-full bg-fuchsia-400/10 blur-3xl"
+        ></div>
+
+
+        <div class="relative">
+
+          <div class="flex items-center justify-between">
+
+            <div>
+
+              <p
+                class="mono-label text-slate-400"
+              >
+                03 / CUSTOM
+              </p>
+
+              <h3
+                class="mt-2 text-xl font-black tracking-[-0.04em] text-slate-950 dark:text-white"
+              >
+                Enterprise
+              </h3>
+
+            </div>
+
+            <span
+              class="rounded-lg border border-fuchsia-400/20 bg-fuchsia-400/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-fuchsia-500"
+            >
+              Custom
+            </span>
+
+          </div>
+
+
+          <!-- Price -->
+
+          <div class="mt-7 flex items-end gap-1">
+
+            <span
+              class="text-4xl font-black tracking-[-0.07em] text-slate-950 dark:text-white"
+            >
+              Custom
+            </span>
+
+          </div>
+
+
+          <p class="mt-3 min-h-[42px] text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+            Dedicated infrastructure and controls for high-scale organizations.
+          </p>
+
+
+          <a
+            href="#"
+            class="mt-6 flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-fuchsia-300 hover:text-fuchsia-500 dark:border-white/[0.08] dark:bg-white/[0.035] dark:text-slate-300 dark:hover:border-fuchsia-400/30 dark:hover:text-fuchsia-300"
+          >
+            Talk to engineering
+          </a>
+
+
+          <div class="my-6 h-px bg-slate-200/80 dark:bg-white/[0.07]"></div>
+
+
+          <p
+            class="mb-4 mono-label text-slate-400"
+          >
+            Enterprise capabilities
+          </p>
+
+
+          <ul class="space-y-3 text-[11px] text-slate-500 dark:text-slate-400">
+
+            <li class="flex gap-2.5">
+              <span class="text-fuchsia-400">◆</span>
+              Dedicated clusters
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-fuchsia-400">◆</span>
+              BYO-KMS encryption
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-fuchsia-400">◆</span>
+              Custom data residency
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-fuchsia-400">◆</span>
+              24/7 on-call engineer
+            </li>
+
+            <li class="flex gap-2.5">
+              <span class="text-fuchsia-400">◆</span>
+              Custom SLA
+            </li>
+
+          </ul>
+
+        </div>
+
+      </article>
+
+    </div>
+
+
+    <!-- =======================================================
+         TRUST / DOCUMENTATION STRIP
+    ======================================================== -->
+
+    <div
+      id="docs"
+      class="mt-10 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/60 backdrop-blur-xl dark:border-white/[0.07] dark:bg-white/[0.02]"
+    >
+
+      <div class="flex flex-col gap-5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+
+        <div class="flex items-center gap-3">
+
+          <span
+            class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-[11px] dark:bg-white/[0.06]"
+          >
+            ↗
+          </span>
+
+          <span class="mono-label text-slate-400">
+            Developer resources
+          </span>
+
+        </div>
+
+
+        <div
+          class="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px]"
+        >
+
+          <a
+            href="#"
+            class="text-slate-500 transition-colors hover:text-sky-400 dark:text-slate-400"
+          >
+            Quickstart
+          </a>
+
+          <span class="text-slate-300 dark:text-slate-700">/</span>
+
+          <a
+            href="#"
+            class="text-slate-500 transition-colors hover:text-sky-400 dark:text-slate-400"
+          >
+            API reference
+          </a>
+
+          <span class="text-slate-300 dark:text-slate-700">/</span>
+
+          <a
+            href="#"
+            class="text-slate-500 transition-colors hover:text-sky-400 dark:text-slate-400"
+          >
+            Migration guides
+          </a>
+
+          <span class="text-slate-300 dark:text-slate-700">/</span>
+
+          <a
+            href="#"
+            class="text-slate-500 transition-colors hover:text-sky-400 dark:text-slate-400"
+          >
+            Status page
+          </a>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+  </div>
+
+</section>
+
+
+  </main>
+
+  <!-- Footer -->
+ 
+
+
+
+
+<footer class="relative overflow-hidden border-t border-slate-200/70 dark:border-white/[0.07] bg-white dark:bg-[#05060a]">
+
+  <!-- =========================================================
+       FUTURISTIC BACKGROUND
+  ========================================================== -->
+
+  <div class="pointer-events-none absolute inset-0 overflow-hidden">
+
+    <!-- Large grid -->
+    <div
+      class="absolute inset-0 opacity-[0.035] dark:opacity-[0.055]"
+      style="
+        background-image:
+          linear-gradient(to right, currentColor 1px, transparent 1px),
+          linear-gradient(to bottom, currentColor 1px, transparent 1px);
+        background-size: 72px 72px;
+      "
+    ></div>
+
+    <!-- Horizontal futuristic scan lines -->
+    <div
+      class="absolute inset-x-0 top-[22%] h-px bg-gradient-to-r from-transparent via-violet-500/30 to-transparent"
+    ></div>
+
+    <div
+      class="absolute inset-x-0 top-[68%] h-px bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent"
+    ></div>
+
+    <!-- Glow -->
+    <div
+      class="absolute -left-32 bottom-0 h-96 w-96 rounded-full bg-violet-500/10 blur-[120px]"
+    ></div>
+
+    <div
+      class="absolute -right-32 top-0 h-96 w-96 rounded-full bg-cyan-400/10 blur-[120px]"
+    ></div>
+
+    <!-- Tiny futuristic dots -->
+    <div class="absolute left-[8%] top-[20%] h-1 w-1 rounded-full bg-violet-400"></div>
+    <div class="absolute right-[12%] top-[35%] h-1 w-1 rounded-full bg-cyan-400"></div>
+    <div class="absolute left-[48%] bottom-[24%] h-1 w-1 rounded-full bg-violet-400"></div>
+
+    <!-- Huge watermark -->
+    <div
+      class="absolute inset-x-0 bottom-[-3rem] select-none text-center text-[clamp(5rem,18vw,15rem)] font-black uppercase tracking-[-0.08em] leading-none"
+      style="
+        background: linear-gradient(
+          135deg,
+          rgba(167,139,250,.13),
+          rgba(94,234,212,.08),
+          rgba(56,189,248,.04)
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      "
+      aria-hidden="true"
+    >
+      AETHERSYNC
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       MAIN CONTAINER
+  ========================================================== -->
+
+  <div class="relative mx-auto max-w-6xl px-5 pb-8 pt-16 sm:px-6 lg:px-8">
+
+
+    <!-- =======================================================
+         BRAND / TOP SECTION
+    ======================================================== -->
+
+    <div class="mb-14 grid gap-12 lg:grid-cols-[1.4fr_2fr] lg:items-end">
+
+      <!-- Brand -->
+      <div>
+
+        <a
+          href="#top"
+          class="group inline-flex items-center gap-3"
+        >
+
+          <!-- Logo -->
+          <span
+            class="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm shadow-violet-500/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:border-violet-300 group-hover:shadow-lg group-hover:shadow-violet-500/20 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none dark:group-hover:border-violet-400/30"
+          >
+
+            <!-- Logo glow -->
+            <span
+              class="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500/20 to-cyan-400/20 opacity-0 blur-xl transition-opacity duration-300 group-hover:opacity-100"
+            ></span>
+
+            <svg
+              width="34"
+              height="34"
+              viewBox="0 0 40 40"
+              aria-hidden="true"
+              class="relative"
+            >
+              <defs>
+                <linearGradient id="aetherFooterLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#a78bfa" />
+                  <stop offset="50%" stop-color="#60a5fa" />
+                  <stop offset="100%" stop-color="#5eead4" />
+                </linearGradient>
+              </defs>
+
+              <g
+                stroke="url(#aetherFooterLogo)"
+                stroke-width="2"
+                fill="none"
+                stroke-linecap="round"
+              >
+                <path d="M8 26c-4 0-6-6-2-9 1-5 8-7 12-3 4-4 12-1 12 5 4 0 6 6 2 8" />
+                <path d="M14 28l6-8 8 6M20 20V12" />
+              </g>
+
+              <g fill="url(#aetherFooterLogo)">
+                <circle cx="14" cy="28" r="3" />
+                <circle cx="20" cy="20" r="3" />
+                <circle cx="28" cy="26" r="3" />
+                <circle cx="20" cy="12" r="2.5" />
+              </g>
+            </svg>
+          </span>
+
+          <!-- Brand name -->
+          <span
+            class="text-xl font-black tracking-[-0.045em] text-slate-950 dark:text-white"
+          >
+            Aether<span
+              class="bg-gradient-to-r from-violet-500 via-blue-500 to-cyan-400 bg-clip-text text-transparent"
+            >Sync</span>
+          </span>
+
+        </a>
+
+
+        <p
+          class="mt-5 max-w-sm text-[13px] leading-6 text-slate-500 dark:text-slate-400"
+        >
+          Infrastructure for the next generation of connected products.
+          Fast, observable, and built to scale without friction.
+        </p>
+
+
+        <!-- Mini status -->
+        <div class="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3.5 py-2 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur-md dark:border-white/[0.08] dark:bg-white/[0.035] dark:text-slate-400">
+
+          <span class="relative flex h-2 w-2">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50"
+            ></span>
+
+            <span
+              class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"
+            ></span>
+          </span>
+
+          All systems operational
+
+        </div>
+
+      </div>
+
+
+      <!-- Footer intro -->
+      <div class="lg:justify-self-end lg:text-right">
+
+        <div
+          class="mb-3 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400 lg:justify-end"
+        >
+          <span class="h-px w-8 bg-gradient-to-r from-transparent to-violet-400"></span>
+          AETHER / 2026
+          <span class="h-px w-8 bg-gradient-to-l from-transparent to-cyan-400"></span>
+        </div>
+
+        <h2
+          class="max-w-lg text-3xl font-black tracking-[-0.055em] text-slate-900 dark:text-white sm:text-4xl"
+        >
+          Build beyond the
+          <span
+            class="bg-gradient-to-r from-violet-500 via-blue-500 to-cyan-400 bg-clip-text text-transparent"
+          >
+            ordinary.
+          </span>
+        </h2>
+
+      </div>
+
+    </div>
+
+
+    <!-- =======================================================
+         NAVIGATION GRID
+    ======================================================== -->
+
+    <div
+      class="relative border-y border-slate-200/80 py-10 dark:border-white/[0.07]"
+    >
+
+      <!-- Decorative center line -->
+      <div
+        class="pointer-events-none absolute left-1/2 top-0 hidden h-full w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-violet-500/10 to-transparent lg:block"
+      ></div>
+
+
+      <div class="grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
+
+        <!-- Product -->
+        <div>
+          <h3
+            class="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-900 dark:text-white"
+          >
+            Product
+          </h3>
+
+          <ul class="space-y-2.5">
+
+            <li>
+              <a
+                href="#"
+                class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300"
+              >
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">
+                  →
+                </span>
+                Sync engine
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Edge network
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Observability
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Changelog
+              </a>
+            </li>
+
+          </ul>
+        </div>
+
+
+        <!-- Developers -->
+        <div>
+          <h3 class="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-900 dark:text-white">
+            Developers
+          </h3>
+
+          <ul class="space-y-2.5">
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Documentation
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                SDKs
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                CLI
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Status API
+              </a>
+            </li>
+
+          </ul>
+        </div>
+
+
+        <!-- Solutions -->
+        <div>
+          <h3 class="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-900 dark:text-white">
+            Solutions
+          </h3>
+
+          <ul class="space-y-2.5">
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Collaboration
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Fintech
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Gaming
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-violet-500 dark:text-slate-400 dark:hover:text-violet-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                IoT fleets
+              </a>
+            </li>
+
+          </ul>
+        </div>
+
+
+        <!-- Company -->
+        <div>
+          <h3 class="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-900 dark:text-white">
+            Company
+          </h3>
+
+          <ul class="space-y-2.5">
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-blue-500 dark:text-slate-400 dark:hover:text-blue-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                About
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-blue-500 dark:text-slate-400 dark:hover:text-blue-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Careers
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-blue-500 dark:text-slate-400 dark:hover:text-blue-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Blog
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-blue-500 dark:text-slate-400 dark:hover:text-blue-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Contact
+              </a>
+            </li>
+
+          </ul>
+        </div>
+
+
+        <!-- Legal -->
+        <div>
+          <h3 class="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-900 dark:text-white">
+            Legal
+          </h3>
+
+          <ul class="space-y-2.5">
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Privacy
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Terms
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                Security
+              </a>
+            </li>
+
+            <li>
+              <a href="#" class="group flex items-center text-[12px] text-slate-500 transition-colors hover:text-cyan-500 dark:text-slate-400 dark:hover:text-cyan-300">
+                <span class="mr-0 max-w-0 overflow-hidden transition-all duration-300 group-hover:mr-2 group-hover:max-w-3">→</span>
+                DPA
+              </a>
+            </li>
+
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- =======================================================
+         BOTTOM BAR
+    ======================================================== -->
+
+    <div class="relative flex flex-col gap-5 pt-7 text-[11px] text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+
+      <!-- Copyright -->
+      <div class="flex items-center gap-2.5">
+
+        <svg
+          width="27"
+          height="27"
+          viewBox="0 0 40 40"
+          aria-hidden="true"
+          class="opacity-80"
+        >
+          <defs>
+            <linearGradient id="aetherBottomLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#a78bfa" />
+              <stop offset="100%" stop-color="#5eead4" />
+            </linearGradient>
+          </defs>
+
+          <g
+            stroke="url(#aetherBottomLogo)"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          >
+            <path d="M8 26c-4 0-6-6-2-9 1-5 8-7 12-3 4-4 12-1 12 5 4 0 6 6 2 8" />
+            <path d="M14 28l6-8 8 6M20 20V12" />
+          </g>
+
+          <g fill="url(#aetherBottomLogo)">
+            <circle cx="14" cy="28" r="3" />
+            <circle cx="20" cy="20" r="3" />
+            <circle cx="28" cy="26" r="3" />
+            <circle cx="20" cy="12" r="2.5" />
+          </g>
+        </svg>
+
+        <span>
+          © 2026 AetherSync, Inc.
+        </span>
+
+      </div>
+
+
+      <!-- Center metadata -->
+      <div class="flex items-center gap-3">
+
+        <span class="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
+          SYS
+        </span>
+
+        <span class="h-px w-8 bg-slate-200 dark:bg-white/10"></span>
+
+        <span class="font-mono text-[9px] uppercase tracking-[0.15em]">
+          v2.06.26
+        </span>
+
+        <span class="h-px w-8 bg-slate-200 dark:bg-white/10"></span>
+
+        <span class="font-mono text-[9px] uppercase tracking-[0.15em]">
+          GLOBAL
+        </span>
+
+      </div>
+
+
+      <!-- Socials -->
+      <div class="flex items-center gap-2">
+
+        <!-- X -->
+        <a
+          href="https://x.com/home"
+          aria-label="X"
+          class="group flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/70 text-slate-500 transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:text-slate-950 dark:border-white/[0.08] dark:bg-white/[0.025] dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-white"
+        >
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.244 2H21.5l-7.11 8.13L22.75 22h-6.58l-5.15-6.73L5.13 22H1.87l7.6-8.69L1.25 2h6.75l4.65 6.15L18.244 2Zm-1.15 17.85h1.82L7.01 4.03H5.06L17.094 19.85Z"/>
+          </svg>
+        </a>
+
+
+        <!-- GitHub -->
+        <a
+          href="https://github.com/Robiu-Sani"
+          aria-label="GitHub"
+          class="group flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/70 text-slate-500 transition-all hover:-translate-y-0.5 hover:border-violet-300 hover:text-violet-500 dark:border-white/[0.08] dark:bg-white/[0.025] dark:text-slate-400 dark:hover:border-violet-400/30 dark:hover:text-violet-300"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.2.08 1.83 1.23 1.83 1.23 1.07 1.83 2.81 1.3 3.5.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.4 11.4 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z"/>
+          </svg>
+        </a>
+
+
+        <!-- LinkedIn -->
+        <a
+          href="https://www.linkedin.com/in/robius-sani-mobarok/"
+          aria-label="LinkedIn"
+          class="group flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/70 text-slate-500 transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-500 dark:border-white/[0.08] dark:bg-white/[0.025] dark:text-slate-400 dark:hover:border-blue-400/30 dark:hover:text-blue-300"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4.98 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM2.75 9.75h4.46V21H2.75V9.75Zm7.26 0h4.28v1.54h.06c.6-1.13 2.05-2.32 4.22-2.32 4.51 0 5.34 2.97 5.34 6.84V21h-4.46v-4.58c0-1.09-.02-2.49-1.52-2.49-1.52 0-1.75 1.19-1.75 2.42V21h-4.46V9.75Z"/>
+          </svg>
+        </a>
+
+      </div>
+
+    </div>
+
+
+    <!-- Bottom micro line -->
+    <div class="mt-7 flex items-center gap-3">
+
+      <span class="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-white/[0.07]"></span>
+
+      <span class="font-mono text-[8px] uppercase tracking-[0.35em] text-slate-300 dark:text-slate-700">
+        AETHER / CONNECTED / 2026
+      </span>
+
+      <span class="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-white/[0.07]"></span>
+
+    </div>
+
+  </div>
+</footer>
+
+
+
+
+  <script>
+(() => { const codeElement = document.getElementById("featureCode"); const lineNumbers = document.getElementById("featureLineNumbers"); const terminal = document.getElementById("featureTerminal"); const tabs = document.querySelectorAll(".feature-code-tab"); if (!codeElement || !lineNumbers) return; /* ======================================================= CODE EXAMPLES ======================================================== */ const codeExamples = { js: { terminal: "aether deploy --region eu-west,ap-south", code: `import { Aether } from "@aethersync/sdk";
+
+const aether = new Aether({
+  project: "stellar-app",
+  region: "auto",
+});
+
+const channel = await aether.sync("messages");
+
+channel.on("change", ({ data }) => {
+  console.log("Synced:", data);
+});
+
+await channel.push({
+  type: "message",
+  payload: message,
+});` }, py: { terminal: "aether sync --region eu-west,ap-south", code: `from aethersync import Aether
+
+aether = Aether(
+    project="stellar-app",
+    region="auto",
+)
+
+channel = aether.sync("messages")
+
+@channel.on("change")
+def handle_change(event):
+    print("Synced:", event.data)
+
+channel.push({
+    "type": "message",
+    "payload": message,
+})` }, go: { terminal: "aether deploy --global", code: `package main
+
+import (
+    "context"
+    "fmt"
+    "aethersync.dev/go"
+)
+
+func main() {
+    client := aether.New(
+        aether.WithProject("stellar-app"),
+    )
+
+    channel := client.Sync(
+        context.Background(),
+        "messages",
+    )
+
+    channel.OnChange(func(data any) {
+        fmt.Println("Synced:", data)
+    })
+}` } }; /* ======================================================= SIMPLE SYNTAX HIGHLIGHTING ======================================================== */ function escapeHTML(value) { return value .replace(/&/g, "&amp;") .replace(/</g, "&lt;") .replace(/>/g, "&gt;"); } function highlightCode(code) { let html = escapeHTML(code); /* Strings */ html = html.replace( /(["'`])(?:(?=(\\?))\2.)*?\1/g, '<span class="text-emerald-300">$&</span>' ); /* Keywords */ html = html.replace( /\b(import|from|const|let|var|new|await|async|def|class|func|package|return|for|in|if|else)\b/g, '<span class="text-violet-400">$1</span>' ); /* Numbers */ html = html.replace( /\b\d+(?:\.\d+)?\b/g, '<span class="text-orange-300">$&</span>' ); /* Comments */ html = html.replace( /(\/\/.*|#.*)/g, '<span class="text-slate-600">$1</span>' ); /* Functions */ html = html.replace( /\b([A-Za-z_$][\w$]*)\(/g, '<span class="text-sky-300">$1</span>(' ); return html; } /* ======================================================= RENDER CODE ======================================================== */ function renderCode(language) { const example = codeExamples[language]; if (!example) return; const lines = example.code.split("\n"); lineNumbers.innerHTML = lines .map((_, index) => `<div>${index + 1}</div>`) .join(""); codeElement.innerHTML = highlightCode(example.code); if (terminal) { terminal.textContent = example.terminal; } } /* ======================================================= TAB SWITCHING ======================================================== */ tabs.forEach((tab) => { tab.addEventListener("click", () => { const language = tab.dataset.code; if (!language || !codeExamples[language]) return; tabs.forEach((item) => { item.classList.remove( "bg-white/[0.08]", "text-slate-200" ); item.classList.add("text-slate-500"); }); tab.classList.remove("text-slate-500"); tab.classList.add( "bg-white/[0.08]", "text-slate-200" ); renderCode(language); }); }); /* ======================================================= INITIAL CODE ======================================================== */ renderCode("js"); /* ======================================================= TERMINAL CURSOR EFFECT ======================================================== */ if (terminal) { const originalTerminalText = terminal.textContent; terminal.innerHTML = ` <span>${originalTerminalText}</span> <span class="ml-1 inline-block h-3 w-[5px] translate-y-[2px] animate-pulse bg-emerald-300"></span> `; } /* ======================================================= FEATURE CARD INTERACTION ======================================================== */ const featureCards = document.querySelectorAll( ".feature-detail" ); featureCards.forEach((card) => { card.addEventListener("mouseenter", () => { const feature = card.dataset.feature; if (feature === "encryption") { codeElement.style.textShadow = "0 0 20px rgba(34,211,238,.15)"; } if (feature === "failover") { codeElement.style.textShadow = "0 0 20px rgba(139,92,246,.15)"; } if (feature === "scaling") { codeElement.style.textShadow = "0 0 20px rgba(217,70,239,.15)"; } }); card.addEventListener("mouseleave", () => { codeElement.style.textShadow = ""; }); }); /* ======================================================= REDUCED MOTION ======================================================== */ const reducedMotion = window.matchMedia( "(prefers-reduced-motion: reduce)" ); if (reducedMotion.matches) { document .querySelectorAll(".feature-detail") .forEach((card) => { card.style.transition = "none"; }); } })();
+    // Theme
+    const root = document.documentElement, ti = document.getElementById('theme-i');
+    const setIcon = () => ti.setAttribute('href', root.classList.contains('dark') ? '#i-sun' : '#i-moon');
+    try { const s = localStorage.getItem('as-theme'); if (s === 'light') root.classList.remove('dark'); } catch(e) {}
+    setIcon();
+    document.getElementById('theme').onclick = () => {
+      root.classList.toggle('dark');
+      setIcon();
+      try { localStorage.setItem('as-theme', root.classList.contains('dark') ? 'dark' : 'light'); } catch(e) {}
+    };
+
+    // 3D tilt
+    document.querySelectorAll('[data-tilt]').forEach(el => {
+      el.addEventListener('mousemove', e => {
+        const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+        el.style.transform = `perspective(900px) rotateY(${x*7}deg) rotateX(${-y*7}deg) translateY(-4px)`;
+      });
+      el.addEventListener('mouseleave', () => el.style.transform = '');
+    });
+
+    // Counters
+    const io = new IntersectionObserver(es => es.forEach(en => {
+      if (!en.isIntersecting) return;
+      io.unobserve(en.target);
+      const t = parseFloat(en.target.dataset.count), d = +en.target.dataset.dec || 0, s = performance.now();
+      const step = n => {
+        const p = Math.min((n - s) / 1200, 1);
+        en.target.textContent = (t * (1 - Math.pow(1 - p, 3))).toFixed(d);
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }), { threshold: .5 });
+    document.querySelectorAll('[data-count]').forEach(el => io.observe(el));
+
+    // Sync mode tabs
+    const modes = {
+      ws: {
+        d: 'Persistent full-duplex connection. Best for chat, cursors and dashboards that push many small updates.',
+        lat: '3.1 ms',
+        fan: '250k',
+        tag: 'wss://edge.aethersync.io'
+      },
+      grpc: {
+        d: 'Binary protobuf streams over HTTP/2. Best for service-to-service replication with strict schemas.',
+        lat: '2.6 ms',
+        fan: '120k',
+        tag: 'grpc://mesh.aethersync.io:443'
+      },
+      h3: {
+        d: 'QUIC-based event stream with no head-of-line blocking. Best for mobile clients on unstable networks.',
+        lat: '3.9 ms',
+        fan: '400k',
+        tag: 'https://edge.aethersync.io (h3)'
+      }
+    };
+    function setMode(k) {
+      const m = modes[k];
+      document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.m === k));
+      document.getElementById('mode-desc').textContent = m.d;
+      document.getElementById('m-lat').textContent = m.lat;
+      document.getElementById('m-fan').textContent = m.fan;
+      document.getElementById('mode-tag').textContent = m.tag;
+    }
+    document.querySelectorAll('.tab').forEach(b => b.onclick = () => setMode(b.dataset.m));
+    setMode('ws');
+
+    // Throughput bars
+    const bars = document.getElementById('bars');
+    for (let i = 0; i < 12; i++) {
+      const b = document.createElement('div');
+      b.className = 'flex-1 rounded-t';
+      b.style.background = 'linear-gradient(#a78bfa,#38bdf8)';
+      b.style.transition = 'height .6s';
+      bars.appendChild(b);
+    }
+    const upd = () => [...bars.children].forEach(b => b.style.height = (30 + Math.random() * 70) + '%');
+    upd(); setInterval(upd, 2200);
+
+    // Log stream
+    const log = document.getElementById('log');
+    const ev = [
+      ['sync','eu-west-2 → ap-south-1 delta applied (2.1 KB)','text-sky-400'],
+      ['auth','token refreshed for tenant northwind','text-violet-400'],
+      ['lb','shard 17 split into 17a/17b (hot key)','text-pink-400'],
+      ['sync','client 8f2c reconnected, replayed 14 ops','text-sky-400'],
+      ['edge','POP fra-03 health check 200 in 4 ms','text-emerald-400'],
+      ['repl','us-east-1 lag 0.9 ms','text-teal-300'],
+      ['fail','sa-east-1 drained, traffic rerouted','text-amber-300']
+    ];
+    function addLog() {
+      const [t, m, c] = ev[Math.floor(Math.random() * ev.length)];
+      const d = document.createElement('div');
+      d.innerHTML = `<span class="mut">${new Date().toISOString().slice(11,19)}</span> <span class="${c}">[${t}]</span> ${m}`;
+      log.appendChild(d);
+      while (log.children.length > 7) log.firstChild.remove();
+    }
+    for (let i = 0; i < 5; i++) addLog();
+    setInterval(addLog, 1400);
+
+    // Code previewer
+    const code = {
+      js: `<span class="tk-c">// app.js</span>
+<span class="tk-k">import</span> { AetherSync } <span class="tk-k">from</span> <span class="tk-s">'@aethersync/sdk'</span>;
+
+<span class="tk-k">const</span> sync = <span class="tk-k">new</span> <span class="tk-f">AetherSync</span>({ key: process.env.AETHER_KEY });
+<span class="tk-k">const</span> board = sync.<span class="tk-f">doc</span>(<span class="tk-s">'boards/roadmap'</span>);
+
+board.<span class="tk-f">on</span>(<span class="tk-s">'change'</span>, (delta) => <span class="tk-f">render</span>(delta));
+<span class="tk-k">await</span> board.<span class="tk-f">set</span>({ title: <span class="tk-s">'Q4 launch'</span>, owner: <span class="tk-s">'maya'</span> });`,
+      py: `<span class="tk-c"># sync.py</span>
+<span class="tk-k">from</span> aethersync <span class="tk-k">import</span> Client
+
+client = <span class="tk-f">Client</span>(api_key=os.environ[<span class="tk-s">"AETHER_KEY"</span>])
+board = client.<span class="tk-f">doc</span>(<span class="tk-s">"boards/roadmap"</span>)
+
+<span class="tk-k">for</span> delta <span class="tk-k">in</span> board.<span class="tk-f">stream</span>():
+    <span class="tk-f">handle</span>(delta)  <span class="tk-c"># ordered, exactly-once</span>`
+    };
+    const pre = document.getElementById('code');
+    document.querySelectorAll('.ctab').forEach(b => b.onclick = () => {
+      pre.innerHTML = code[b.dataset.l];
+      document.querySelectorAll('.ctab').forEach(x => x.className = 'ctab px-3 py-1 rounded text-slate-400');
+      b.className = 'ctab px-3 py-1 rounded bg-slate-800 text-slate-100';
+    });
+    pre.innerHTML = code.js;
+
+    // Newsletter
+    document.getElementById('nl').onsubmit = e => {
+      e.preventDefault();
+      e.target.innerHTML = '<p class="text-emerald-400 font-medium">Subscribed. Check your inbox to confirm.</p>';
+    };
+
+
+/* =========================================================
+   AETHERSYNC PRICING INTERACTIONS
+========================================================= */
+
+(() => {
+  const billingButtons = document.querySelectorAll("[data-billing]");
+  const billingIndicator = document.getElementById("billingIndicator");
+  const priceElements = document.querySelectorAll(".price-value");
+
+  if (!billingButtons.length) return;
+
+
+  /* =======================================================
+     BILLING TOGGLE
+  ======================================================== */
+
+  billingButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const billing = button.dataset.billing;
+
+      if (!billing) return;
+
+
+      /* Move indicator */
+
+      if (billing === "yearly") {
+        billingIndicator.style.transform = "translateX(100%)";
+      } else {
+        billingIndicator.style.transform = "translateX(0)";
+      }
+
+
+      /* Update button typography */
+
+      billingButtons.forEach((btn) => {
+        const active = btn.dataset.billing === billing;
+
+        btn.classList.toggle("text-slate-900", active);
+        btn.classList.toggle("dark:text-white", active);
+
+        btn.classList.toggle("text-slate-500", !active);
+        btn.classList.toggle("dark:text-slate-400", !active);
+      });
+
+
+      /* Update prices */
+
+      priceElements.forEach((price) => {
+        const value = price.dataset[billing];
+
+        if (value === undefined) return;
+
+
+        /* Small transition */
+
+        price.style.opacity = "0";
+        price.style.transform = "translateY(5px)";
+
+        setTimeout(() => {
+
+          price.textContent = `$${value}`;
+
+          price.style.opacity = "1";
+          price.style.transform = "translateY(0)";
+
+        }, 150);
+      });
+    });
+  });
+
+
+  /* =======================================================
+     SUBTLE 3D CARD TILT
+  ======================================================== */
+
+  const cards = document.querySelectorAll("[data-tilt]");
+
+
+  cards.forEach((card) => {
+
+    card.addEventListener("mousemove", (event) => {
+
+      const rect = card.getBoundingClientRect();
+
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      const rotateX =
+        ((y - centerY) / centerY) * -2.5;
+
+      const rotateY =
+        ((x - centerX) / centerX) * 2.5;
+
+
+      card.style.transform = `
+        perspective(1200px)
+        rotateX(${rotateX}deg)
+        rotateY(${rotateY}deg)
+        translateY(-6px)
+      `;
+    });
+
+
+    card.addEventListener("mouseleave", () => {
+
+      card.style.transform = "";
+
+    });
+
+  });
+
+
+  /* =======================================================
+     ACCESSIBILITY / REDUCED MOTION
+  ======================================================== */
+
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  );
+
+
+  if (reducedMotion.matches) {
+
+    cards.forEach((card) => {
+
+      card.style.transition = "none";
+
+      card.onmousemove = null;
+
+    });
+
+  }
+
+})();
+
+
+  </script>
+</body>
+</html>
